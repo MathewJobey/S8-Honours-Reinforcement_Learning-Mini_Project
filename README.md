@@ -1,1 +1,1 @@
-# S8-Honours-Reinforcement_Learning-MIni_Project
+# S8-Honours-Reinforcement_Learning-Mini_Project
