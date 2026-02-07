@@ -47,3 +47,13 @@ class RocketLander(gym.Env):
         #  Each value corresponds to the maximum expected range for one state variable: 
         # [X position, Y position, X velocity, Y velocity, angle (±π), angular velocity, # left leg contact, right leg contact, fuel, wind X, wind Y]. 
         # These limits normalize the agent’s inputs and keep training stable by capping values.
+        high = np.array([1.5, 1.5, 5.0, 5.0, 3.14, 5.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+        
+        # Action Space: # This defines the agent’s possible control inputs. 
+        # # Index 0 → Main Engine thrust, ranging from 0 (off) to 1 (full power). 
+        # # Index 1 → Steering control, ranging from -1 (full left tilt) to +1 (full right tilt).
+        self.action_space = spaces.Box(
+            low=np.array([0.0, -1.0]), 
+            high=np.array([1.0, 1.0]), 
+            dtype=np.float32
+        )
