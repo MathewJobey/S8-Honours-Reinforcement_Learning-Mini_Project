@@ -4,6 +4,7 @@ import gymnasium as gym
 from gymnasium import spaces
 import Box2D
 from Box2D.b2 import (edgeShape, circleShape, fixtureDef, polygonShape, revoluteJointDef, contactListener)
+import pygame
 
 
 # --- 1. CONFIGURATION CONSTANTS ---
@@ -15,7 +16,7 @@ VIEWPORT_W = 600
 VIEWPORT_H = 400
 
 # Rocket Physics
-MAIN_ENGINE_POWER = 13.0
+MAIN_ENGINE_POWER = 13
 SIDE_ENGINE_POWER = 0.6
 INITIAL_FUEL = 1000.0   # Total units of fuel available
 FUEL_CONSUMPTION_RATE= 5.0  # Fuel used per second of full power
@@ -42,6 +43,8 @@ class RocketLander(gym.Env):
         self.world=None
         self.lander = None
         self.legs = []
+        self.screen = None
+        self.clock = None
         
         # 'high' defines the upper bounds of the observation space for the rocket landing RL environment. 
         #  Each value corresponds to the maximum expected range for one state variable: 
@@ -308,5 +311,5 @@ class ContactDetector(contactListener):
     def EndContact(self, contact):
         # This is called when objects stop touching (e.g., rocket bounces up)
         for i in range(2):
-            if self.legs[i] in [contact.fixtureA.body, contact.fixtureB.body]:
+            if self.env.legs[i] in [contact.fixtureA.body, contact.fixtureB.body]:
                 self.env.legs[i].ground_contact = False
