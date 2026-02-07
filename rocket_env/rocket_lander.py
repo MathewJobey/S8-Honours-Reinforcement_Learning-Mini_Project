@@ -28,3 +28,22 @@ WIND_POWER_MAX = 1.0 # Max random wind force
 # Render Colors
 LANDER_COLOR = (0.5, 0.4, 0.9)
 FUEL_BAR_COLOR = (1.0, 0.0, 0.0)
+
+class RocketLander(gym.Env):
+    """
+    Custom Rocket Landing Environment
+    Action Space: Continuous (Main Engine, Side Thrusters)
+    Observation Space: [x, y, vx, vy, angle, angular_vel, left_leg_touch, right_leg_touch, fuel_left, wind_x, wind_y]
+    """
+    metadata = {'render_modes': ['human', 'rgb_array'], 'render_fps': FPS}
+    
+    def __init__(self, render_mode=None):
+        self.render_mode = render_mode
+        self.world=None
+        self.lander = None
+        self.legs = []
+        
+        # 'high' defines the upper bounds of the observation space for the rocket landing RL environment. 
+        #  Each value corresponds to the maximum expected range for one state variable: 
+        # [X position, Y position, X velocity, Y velocity, angle (±π), angular velocity, # left leg contact, right leg contact, fuel, wind X, wind Y]. 
+        # These limits normalize the agent’s inputs and keep training stable by capping values.
