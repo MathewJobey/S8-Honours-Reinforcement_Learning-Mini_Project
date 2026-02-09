@@ -289,6 +289,74 @@ class RocketLander(gym.Env):
         if not self.world: return
         self.world = None
         
+    def render(self):
+        if self.render_mode is None:
+            return
+
+        # Initialize PyGame if it hasn't been done yet
+        if self.screen is None:
+            pygame.init()
+            if self.render_mode == "human":
+                pygame.display.init()
+                self.screen = pygame.display.set_mode((VIEWPORT_W, VIEWPORT_H))
+            else:
+                self.screen = pygame.Surface((VIEWPORT_W, VIEWPORT_H))
+        
+        if self.clock is None:
+            self.clock = pygame.time.Clock()
+
+        # 1. Fill Background (Black Space)
+        self.screen.fill((0, 0, 0))
+
+        # 2. Draw The Ground (White Line)
+        pygame.draw.line(
+            self.screen, 
+            (255, 255, 255), 
+            (0, VIEWPORT_H - 10), 
+            (VIEWPORT_W, VIEWPORT_H - 10), 
+            1
+        )
+
+        # 3. Draw The Rocket Parts
+        for obj in self.drawlist:
+            for f in obj.fixtures:
+                trans = f.body.transform
+                # Get the shape vertices from Box2D
+                path = [trans * v for v in f.shape.vertices]
+                
+                # Convert Box2D Coordinates to Screen Coordinates
+                # Formula: PixelX = (WorldX * SCALE) + (ScreenCenter)
+                # Formula: PixelY = ScreenHeight - (WorldY * SCALE) - Offset
+                pixel_path = [
+                    (SCALE * v[0] + VIEWPORT_W / 2, VIEWPORT_H - SCALE * v[1] - 10)
+                    for v in path
+                ]
+                
+                # Pick Color (Purple for body, Gray for legs)
+                color = (128, 102, 230) 
+                if obj != self.lander:
+                    color = (200, 200, 200)
+
+                # Draw filled polygon
+                pygame.draw.polygon(self.screen, color, pixel_path)
+
+        # 4. Update the Display
+        if self.render_mode == "human":
+            pygame.event.pump()
+            self.clock.tick(self.metadata["render_fps"])
+            pygame.display.flip()
+
+        elif self.render_mode == "rgb_array":
+            return np.transpose(
+                np.array(pygame.surfarray.pixels3d(self.screen)), axes=(1, 0, 2)
+            )
+    
+    def close(self):
+        if self.screen is not None:
+            pygame.display.quit()
+            pygame.quit()
+            self.screen = None
+        
 class ContactDetector(contactListener):
     def __init__(self, env):
         contactListener.__init__(self)
