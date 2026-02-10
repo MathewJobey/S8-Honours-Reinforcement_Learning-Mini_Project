@@ -19,6 +19,7 @@ class RocketLander(gym.Env):
         self.lander = None
         self.legs = []
         self.main_engine_power = 0.0
+        self.landing_status = "IN_PROGRESS" # <--- ADD THIS LINE
         
         # Initialize Visualizer
         self.visualizer = RocketVisualizer(self)
@@ -47,6 +48,7 @@ class RocketLander(gym.Env):
         self.game_over = False
         self.prev_shaping = None
         self.fuel_left = INITIAL_FUEL
+        self.landing_status = "IN_PROGRESS" # <--- ADD THIS LINE
 
         # 2. Create Objects
         self._generate_wind()
@@ -152,21 +154,18 @@ class RocketLander(gym.Env):
         reward -= main_engine_power * 0.10
         
         # C. Terminal Rewards (The "Report Card" from your Table)
-        # This only triggers when the episode ends (Crash or Land)
         
         # 1. CRASH Conditions
-        # - Body hit ground (game_over)
-        # - Left screen bounds (abs(x) > 1.0)
-        # - Tilted too far (> 45 degrees / 0.78 rad)
         if self.game_over or abs(state[0]) >= 1.0 or tilt_rad > 0.78:
             terminated = True
-            reward = -100 # "Crash: Hit ground too fast / Tipped"
+            reward = -100 
+            self.landing_status = "CRASH" # <--- ADD THIS LINE
             
         # 2. LANDING Conditions
-        # - Legs touching ground AND Rocket is sleeping (stopped moving)
         elif not self.lander.awake:
             terminated = True
-            reward = 100 # "Survival: Safe Landing"
+            reward = 100 
+            self.landing_status = "LANDED" # <--- ADD THIS LINE
             
             # --- ACCURACY (Bullseye vs Pad vs Grass) ---
             # Pad Radius is half the width (approx 1.33 meters)

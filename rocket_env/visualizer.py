@@ -80,6 +80,28 @@ class RocketVisualizer:
         # Blit pad and draw outline
         self.screen.blit(pad_surf, (pad_x, pad_y))
         pygame.draw.rect(self.screen, (0,0,0), (pad_x, pad_y, pad_w, pad_h), 2)
+        
+        # --- DRAW STATUS LIGHTS (NEW CODE) ---
+        # 1. Determine Color based on Game State
+        status = getattr(self.env, 'landing_status', "IN_PROGRESS")
+        
+        if status == "CRASH":
+            light_color = (255, 0, 0)    # RED (Failure)
+        elif status == "LANDED":
+            light_color = (0, 255, 100)    # BRIGHT GREEN (Success)
+        else:
+            light_color = (255, 165, 0)  # ORANGE (Flying/Busy)
+
+        # 2. Draw Bulbs on Left and Right corners
+        bulb_radius = 6
+        
+        # Left Bulb
+        pygame.draw.circle(self.screen, light_color, (int(pad_x), int(pad_y)), bulb_radius)
+        pygame.draw.circle(self.screen, (0,0,0), (int(pad_x), int(pad_y)), bulb_radius, 2) # Black Rim
+        
+        # Right Bulb
+        pygame.draw.circle(self.screen, light_color, (int(pad_x + pad_w), int(pad_y)), bulb_radius)
+        pygame.draw.circle(self.screen, (0,0,0), (int(pad_x + pad_w), int(pad_y)), bulb_radius, 2) # Black Rim
 
         # 4. Draw Rocket Parts
         self._draw_physics_objects()
