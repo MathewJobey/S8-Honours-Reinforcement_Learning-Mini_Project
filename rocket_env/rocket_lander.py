@@ -18,6 +18,7 @@ class RocketLander(gym.Env):
         self.world = None
         self.lander = None
         self.legs = []
+        self.main_engine_power = 0.0
         
         # Initialize Visualizer
         self.visualizer = RocketVisualizer(self)
@@ -59,6 +60,7 @@ class RocketLander(gym.Env):
         action = np.clip(action, -1, 1) 
         main_engine_power = np.clip(action[0], 0.0, 1.0)
         side_engine_power = np.clip(action[1], -1.0, 1.0)
+        self.main_engine_power = main_engine_power
         
         if self.fuel_left <= 0:
             main_engine_power = 0

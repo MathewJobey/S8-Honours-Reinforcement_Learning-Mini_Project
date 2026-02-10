@@ -9,6 +9,7 @@ class RocketVisualizer:
         self.screen = None
         self.clock = None   
         self.font = None
+        self.current_flame_power = 0.0
     
     def init_window(self):
         """Initializes Pygame window if its not already made"""
