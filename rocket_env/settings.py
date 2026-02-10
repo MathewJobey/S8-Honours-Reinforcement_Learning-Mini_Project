@@ -2,7 +2,7 @@
 
 # Screen / Rendering
 FPS = 60
-SCALE =20.0   #  affects how large the screen elements are
+SCALE =10.0   #  affects how large the screen elements are
 VIEWPORT_W = 1000
 VIEWPORT_H = 700
 
@@ -33,7 +33,7 @@ LANDER_COLOR = (128, 102, 230)      # Purple
 LEG_COLOR = (200, 200, 200)         # Gray
 FUEL_BAR_COLOR_FULL = (0, 255, 0)   # Green
 FUEL_BAR_BORDER = (255, 255, 255)   # White
-SKY_COLOR = (0, 0, 0)               # Black
-GROUND_COLOR = (255, 255, 255)      # White
-PAD_COLOR = (255, 255, 0)           # Yellow
-EXHAUST_COLOR = (255, 100, 0)       # Orange
+SKY_COLOR = (68, 89, 228)           # Dark Blue
+GROUND_COLOR = (34, 139, 34)    # Dark Green
+PAD_COLOR_1 = (255, 230, 0)       # Hazard Yellow
+PAD_COLOR_2 = (20, 20, 20)        # Hazard Black (Stripes)

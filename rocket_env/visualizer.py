@@ -20,29 +20,58 @@ class RocketVisualizer:
             self.clock = pygame.time.Clock()
             self.font = pygame.font.SysFont("Arial", 20)
             
-    def render(self,mode="human"):
-        """Renders the current state of the world to the screen"""
+    def render(self, mode="human"):
+        """Renders the world with scaled Hazard Stripes."""
         self.init_window()
 
         # 1. Background
         self.screen.fill(SKY_COLOR)
 
-        # 2. Ground Line
-        pygame.draw.line(
-            self.screen, GROUND_COLOR, 
-            (0, VIEWPORT_H - 10), (VIEWPORT_W, VIEWPORT_H - 10), 1
-        )
+        # --- 2. GROUND (Light Green) ---
+        ground_height = 20
+        ground_y = VIEWPORT_H - ground_height
+        pygame.draw.rect(self.screen, GROUND_COLOR, (0, ground_y, VIEWPORT_W, ground_height))
         
-        # 3. Landing Pad (Yellow Flags)
-        pad_center = VIEWPORT_W / 2
-        # Calculate pixel width dynamically based on zoom (SCALE)
-        pad_width_pixels = PAD_WIDTH_METERS * SCALE  
-        pad_height_pixels = PAD_HEIGHT_METERS * SCALE
-        pygame.draw.rect(
-            self.screen, 
-            PAD_COLOR, 
-            (pad_center - pad_width_pixels/2, VIEWPORT_H - 15, pad_width_pixels, pad_height_pixels)
-        )
+        # --- 3. LANDING PAD (Hazard Stripes) ---
+        # Calculate Dimensions based on SCALE
+        pad_w = int(PAD_WIDTH_METERS * SCALE)
+        pad_h = int(PAD_HEIGHT_METERS * SCALE)
+        
+        # Avoid crashing if scale is too small (width < 1)
+        if pad_w < 1: pad_w = 1
+        if pad_h < 1: pad_h = 1
+        
+        pad_x = (VIEWPORT_W / 2) - (pad_w / 2)
+        pad_y = ground_y - pad_h 
+
+        # --- CREATE A PAD SURFACE (For perfect clipping) ---
+        # We draw the pad on its own little canvas first
+        pad_surf = pygame.Surface((pad_w, pad_h))
+        pad_surf.fill(PAD_COLOR_1) # Background Yellow
+
+        # Draw Stripes (Black)
+        # Scale stripe width (0.5 meters per stripe)
+        stripe_w = 0.5 * SCALE  
+        gap = 0.5 * SCALE       
+        slant = 0.2 * SCALE     # How much the stripe tilts
+        
+        # Draw stripes across the surface width
+        # We start at -pad_h to ensure the slant covers the left edge
+        for i in range(int(-pad_h), int(pad_w + pad_h), int(stripe_w + gap)):
+            # Define a slanted rectangle (Parallelogram)
+            points = [
+                (i, pad_h),                 # Bottom-Left
+                (i + stripe_w, pad_h),      # Bottom-Right
+                (i + stripe_w + slant, 0),  # Top-Right
+                (i + slant, 0)              # Top-Left
+            ]
+            pygame.draw.polygon(pad_surf, PAD_COLOR_2, points)
+
+        # Draw the finished pad onto the main screen
+        self.screen.blit(pad_surf, (pad_x, pad_y))
+        
+        # Optional: Black outline
+        pygame.draw.rect(self.screen, (0,0,0), (pad_x, pad_y, pad_w, pad_h), 1)
 
         # 4. Draw Rocket Parts (Body + Legs)
         self._draw_physics_objects()
