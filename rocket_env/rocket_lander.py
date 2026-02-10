@@ -122,8 +122,9 @@ class RocketLander(gym.Env):
         # We calculate the force vector. Since the rocket rotates, "Up" changes direction!
         # math.sin and math.cos help us find the X and Y components of the force.
         angle = self.lander.angle
-        main_force_x = -math.sin(angle) * main_engine_power * MAIN_ENGINE_POWER
-        main_force_y = math.cos(angle) * main_engine_power * MAIN_ENGINE_POWER
+        # FIX: Convert to standard Python float for Box2D
+        main_force_x = float(-math.sin(angle) * main_engine_power * MAIN_ENGINE_POWER)
+        main_force_y = float(math.cos(angle) * main_engine_power * MAIN_ENGINE_POWER)
         
         # Apply force to the center of the rocket
         self.lander.ApplyForceToCenter(
@@ -133,23 +134,31 @@ class RocketLander(gym.Env):
         
         # B. Side Thruster Force (Steering)
         # We apply an "Impulse" (sudden push) to the TOP of the rocket to tilt it.
-        side_force = side_engine_power * SIDE_ENGINE_POWER
+        # FIX: Convert to standard Python float
+        side_force = float(side_engine_power * SIDE_ENGINE_POWER)
+        
+        # Calculate impulse vector explicitly as floats
+        impulse_x = float(-side_force * math.cos(angle))
+        impulse_y = float(-side_force * math.sin(angle))
+        
         self.lander.ApplyLinearImpulse(
-            (-side_force * math.cos(angle), -side_force * math.sin(angle)), # Direction
-            self.lander.GetWorldPoint(localPoint=(0, 1)), # Apply at Top of rocket
+            (impulse_x, impulse_y), 
+            self.lander.GetWorldPoint(localPoint=(0, 1)), 
             wake=True
         )
 
         # C. Wind Force
         # Wind pushes the rocket constantly in one direction
         self.lander.ApplyForceToCenter(
-            (self.wind_x, self.wind_y), 
+            (float(self.wind_x), float(self.wind_y)), 
             wake=True
         )
 
         # --- 3. RUN SIMULATION ---
         # Run 1/50th of a second of physics
-        self.world.Step(1.0 / FPS, 6 * 30, 2 * 30)
+        # Standard Box2D settings are 6 velocity iterations and 2 position iterations.
+        # This makes the simulation smooth and real-time.
+        self.world.Step(1.0 / FPS, 6, 2)
 
         # --- 4. UPDATE STATE & FUEL ---
         if main_engine_power > 0:
