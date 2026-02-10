@@ -60,12 +60,16 @@ class RocketLander(gym.Env):
         action = np.clip(action, -1, 1) 
         main_engine_power = np.clip(action[0], 0.0, 1.0)
         side_engine_power = np.clip(action[1], -1.0, 1.0)
-        self.main_engine_power = main_engine_power
         
         if self.fuel_left <= 0:
             main_engine_power = 0
             side_engine_power = 0
             
+        # --- SAVE FOR VISUALIZER ---
+        self.main_engine_power = main_engine_power
+        # We don't strictly need side_engine_power for the current HUD, 
+        # but good to keep if you add it back later.
+        
         # 2. Apply Physics Forces
         angle = self.lander.angle
         
@@ -79,12 +83,10 @@ class RocketLander(gym.Env):
         impulse_x = float(-side_force * math.cos(angle))
         impulse_y = float(-side_force * math.sin(angle))
         
-        # FIX: THRUSTER POSITION
-        # Changed localPoint from (0, 1) [Top] to (0, 0.5) [Middle]
-        # This provides smoother horizontal movement (sliding) instead of just spinning.
+        # FIX: Apply side thrust at Center (0,0) to push sideways without wild spinning
         self.lander.ApplyLinearImpulse(
             (impulse_x, impulse_y), 
-            self.lander.GetWorldPoint(localPoint=(0, 0.5)), 
+            self.lander.GetWorldPoint(localPoint=(0, 0)), 
             wake=True
         )
 
@@ -101,11 +103,17 @@ class RocketLander(gym.Env):
         pos = self.lander.position
         vel = self.lander.linearVelocity
         
+        # FIX: Coordinate Normalization
+        # Previous code subtracted view width, confusing Center with Left Edge.
+        # Now: 0 is Center, -1 is Left Edge, +1 is Right Edge.
+        world_width_half = VIEWPORT_W / SCALE / 2
+        world_height = VIEWPORT_H / SCALE
+        
         state = [
-            (pos.x - VIEWPORT_W / SCALE / 2) / (VIEWPORT_W / SCALE / 2),
-            (pos.y - (VIEWPORT_H / SCALE / 2)) / (VIEWPORT_H / SCALE / 2),
-            vel.x * (VIEWPORT_W / SCALE / 2) / FPS,
-            vel.y * (VIEWPORT_H / SCALE / 2) / FPS,
+            pos.x / world_width_half,       # X Position (-1 to 1)
+            (pos.y / world_height) - 0.5,   # Y Position
+            vel.x * (world_width_half) / FPS,
+            vel.y * (world_height) / FPS,
             self.lander.angle,
             self.lander.angularVelocity,
             1.0 if self.legs[0].ground_contact else 0.0,
@@ -129,6 +137,7 @@ class RocketLander(gym.Env):
         
         reward -= main_engine_power * 0.10
         
+        # Check Crash: abs(x) > 1.0 means we hit the wall
         if self.game_over or abs(state[0]) >= 1.0: 
             terminated = True
             reward = -100
