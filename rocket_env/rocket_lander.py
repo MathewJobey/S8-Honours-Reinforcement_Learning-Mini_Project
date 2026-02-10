@@ -12,8 +12,8 @@ import pygame
 
 FPS = 50
 SCALE = 30.0  # affects how large the screen elements are
-VIEWPORT_W = 600
-VIEWPORT_H = 400
+VIEWPORT_W = 1000
+VIEWPORT_H = 800
 
 # Rocket Physics
 MAIN_ENGINE_POWER = 13
@@ -40,21 +40,20 @@ class RocketLander(gym.Env):
     
     def __init__(self, render_mode=None):
         self.render_mode = render_mode
-        self.world=None
+        self.world = None
         self.lander = None
         self.legs = []
         self.screen = None
         self.clock = None
         
-        # 'high' defines the upper bounds of the observation space for the rocket landing RL environment. 
-        #  Each value corresponds to the maximum expected range for one state variable: 
-        # [X position, Y position, X velocity, Y velocity, angle (±π), angular velocity, # left leg contact, right leg contact, fuel, wind X, wind Y]. 
-        # These limits normalize the agent’s inputs and keep training stable by capping values.
+        # --- FIX: Initialize PyGame here so we can load fonts immediately ---
+        pygame.init() 
+        # --------------------------------------------------------------------
+
+        # 'high' defines the upper bounds of the observation space...
         high = np.array([1.5, 1.5, 5.0, 5.0, 3.14, 5.0, 1.0, 1.0, 1.0, 1.0, 1.0])
         
-        # Action Space: # This defines the agent’s possible control inputs. 
-        # # Index 0 → Main Engine thrust, ranging from 0 (off) to 1 (full power). 
-        # # Index 1 → Steering control, ranging from -1 (full left tilt) to +1 (full right tilt).
+        # Action Space: 
         self.action_space = spaces.Box(
             low=np.array([0.0, -1.0]), 
             high=np.array([1.0, 1.0]), 
@@ -62,13 +61,15 @@ class RocketLander(gym.Env):
         )
         
         # Observation Space:
-        # We define the range of values the agent can see (Infinity means no limit)
         self.observation_space = spaces.Box(
             low=-np.inf, 
             high=np.inf, 
-            shape=(11,), # 11 inputs total (including fuel and wind)
+            shape=(11,), 
             dtype=np.float32
         )
+        
+        # Now this will work because pygame is initialized!
+        self.font = pygame.font.SysFont("Arial", 20)
         
         '''WORLD SETUP'''
     def reset(self, seed=None, options=None):
@@ -234,8 +235,8 @@ class RocketLander(gym.Env):
 
     def _create_rocket(self):
         # Start at the top center
-        initial_x = 0  
-        initial_y = VIEWPORT_H / SCALE 
+        initial_x = self.np_random.uniform(-0.3, 0.3) * (VIEWPORT_W / SCALE / 2)
+        initial_y = VIEWPORT_H / SCALE
         
         # --- A. The Main Hull ---
         self.lander = self.world.CreateDynamicBody(
@@ -302,7 +303,7 @@ class RocketLander(gym.Env):
         if self.render_mode is None:
             return
 
-        # Initialize PyGame if it hasn't been done yet
+        # Initialize PyGame and Font
         if self.screen is None:
             pygame.init()
             if self.render_mode == "human":
@@ -313,43 +314,79 @@ class RocketLander(gym.Env):
         
         if self.clock is None:
             self.clock = pygame.time.Clock()
+        
+        # Ensure font is initialized (in case __init__ didn't catch it)
+        if not hasattr(self, 'font') or self.font is None:
+            self.font = pygame.font.SysFont("Arial", 20)
 
-        # 1. Fill Background (Black Space)
+        # 1. Fill Background (Space)
         self.screen.fill((0, 0, 0))
 
-        # 2. Draw The Ground (White Line)
+        # 2. Draw The Ground & Helipad
+        # White line for general ground
         pygame.draw.line(
-            self.screen, 
-            (255, 255, 255), 
-            (0, VIEWPORT_H - 10), 
-            (VIEWPORT_W, VIEWPORT_H - 10), 
-            1
+            self.screen, (255, 255, 255), 
+            (0, VIEWPORT_H - 10), (VIEWPORT_W, VIEWPORT_H - 10), 1
         )
+        
+        # Yellow "Flags" for the Landing Pad (Center of screen)
+        # The pad is at x=0 in physics world, which is VIEWPORT_W/2 in pixels
+        pad_center = VIEWPORT_W / 2
+        pad_width = 80 # Width in pixels
+        pygame.draw.rect(self.screen, (255, 255, 0), (pad_center - pad_width/2, VIEWPORT_H - 15, pad_width, 5))
 
         # 3. Draw The Rocket Parts
         for obj in self.drawlist:
             for f in obj.fixtures:
                 trans = f.body.transform
-                # Get the shape vertices from Box2D
                 path = [trans * v for v in f.shape.vertices]
                 
-                # Convert Box2D Coordinates to Screen Coordinates
-                # Formula: PixelX = (WorldX * SCALE) + (ScreenCenter)
-                # Formula: PixelY = ScreenHeight - (WorldY * SCALE) - Offset
                 pixel_path = [
                     (SCALE * v[0] + VIEWPORT_W / 2, VIEWPORT_H - SCALE * v[1] - 10)
                     for v in path
                 ]
                 
-                # Pick Color (Purple for body, Gray for legs)
                 color = (128, 102, 230) 
                 if obj != self.lander:
                     color = (200, 200, 200)
 
-                # Draw filled polygon
                 pygame.draw.polygon(self.screen, color, pixel_path)
 
-        # 4. Update the Display
+        # 4. Visual Feedback (Exhaust) & Coordinates
+        if self.lander.awake:
+            pos = self.lander.position
+            vel = self.lander.linearVelocity
+            angle = self.lander.angle
+            
+            # Draw Exhaust (Simple visual approximation)
+            # We assume if the rocket is moving up/hovering, engines are likely on.
+            # (In training, we can link this to the exact action variable)
+            bottom_x = pos.x - math.sin(angle) * (18/SCALE)
+            bottom_y = pos.y - math.cos(angle) * (18/SCALE)
+            screen_x = (SCALE * bottom_x) + (VIEWPORT_W / 2)
+            screen_y = VIEWPORT_H - (SCALE * bottom_y) - 10
+            
+            # Draw a little flame if upward velocity is active or just to show position
+            pygame.draw.circle(self.screen, (255, 100, 0), (int(screen_x), int(screen_y)), 5)
+
+            # --- HUD (Heads Up Display) ---
+            
+            # A. Fuel Bar
+            fuel_pct = max(0, self.fuel_left / INITIAL_FUEL)
+            pygame.draw.rect(self.screen, (255, 255, 255), (10, 10, 204, 24), 2) # Border
+            pygame.draw.rect(self.screen, (0, 255, 0), (12, 12, int(200 * fuel_pct), 20))
+            
+            # B. Telemetry Text
+            # Speed (Horizontal and Vertical)
+            label_vx = self.font.render(f"X Speed: {vel.x:.2f} m/s", True, (255, 255, 255))
+            label_vy = self.font.render(f"Y Speed: {vel.y:.2f} m/s", True, (255, 255, 255))
+            label_alt = self.font.render(f"Altitude: {pos.y:.2f} m", True, (255, 255, 255))
+            
+            self.screen.blit(label_vx, (10, 40))
+            self.screen.blit(label_vy, (10, 60))
+            self.screen.blit(label_alt, (10, 80))
+
+        # 5. Flip Display
         if self.render_mode == "human":
             pygame.event.pump()
             self.clock.tick(self.metadata["render_fps"])
@@ -359,7 +396,7 @@ class RocketLander(gym.Env):
             return np.transpose(
                 np.array(pygame.surfarray.pixels3d(self.screen)), axes=(1, 0, 2)
             )
-    
+            
     def close(self):
         if self.screen is not None:
             pygame.display.quit()
