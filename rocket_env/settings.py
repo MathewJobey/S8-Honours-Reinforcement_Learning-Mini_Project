@@ -3,8 +3,8 @@
 # Screen / Rendering
 FPS = 50
 SCALE = 30.0  # affects how large the screen elements are
-VIEWPORT_W = 800
-VIEWPORT_H = 800
+VIEWPORT_W = 1000
+VIEWPORT_H = 700
 
 # Rocket Physics
 MAIN_ENGINE_POWER = 13.0
