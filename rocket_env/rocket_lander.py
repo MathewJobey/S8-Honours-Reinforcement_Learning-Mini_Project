@@ -76,9 +76,13 @@ class RocketLander(gym.Env):
         side_force = float(side_engine_power * SIDE_ENGINE_POWER)
         impulse_x = float(-side_force * math.cos(angle))
         impulse_y = float(-side_force * math.sin(angle))
+        
+        # FIX: THRUSTER POSITION
+        # Changed localPoint from (0, 1) [Top] to (0, 0.5) [Middle]
+        # This provides smoother horizontal movement (sliding) instead of just spinning.
         self.lander.ApplyLinearImpulse(
             (impulse_x, impulse_y), 
-            self.lander.GetWorldPoint(localPoint=(0, 1)), 
+            self.lander.GetWorldPoint(localPoint=(0, 0.5)), 
             wake=True
         )
 
