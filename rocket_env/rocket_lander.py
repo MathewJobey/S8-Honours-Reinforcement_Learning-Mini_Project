@@ -240,7 +240,7 @@ class RocketLander(gym.Env):
         self.legs = []
         # Leg dimensions relative to rocket size
         leg_w = ROCKET_H_WIDTH * 0.2
-        leg_h = ROCKET_HEIGHT * 0.4
+        leg_h = ROCKET_HEIGHT * 0.15
         
         for i in [-1, 1]:
             leg = self.world.CreateDynamicBody(

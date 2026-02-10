@@ -35,8 +35,14 @@ class RocketVisualizer:
         
         # 3. Landing Pad (Yellow Flags)
         pad_center = VIEWPORT_W / 2
-        pad_width = 80 
-        pygame.draw.rect(self.screen, PAD_COLOR, (pad_center - pad_width/2, VIEWPORT_H - 15, pad_width, 5))
+        # Calculate pixel width dynamically based on zoom (SCALE)
+        pad_width_pixels = PAD_WIDTH_METERS * SCALE  
+        pad_height_pixels = PAD_HEIGHT_METERS * SCALE
+        pygame.draw.rect(
+            self.screen, 
+            PAD_COLOR, 
+            (pad_center - pad_width_pixels/2, VIEWPORT_H - 15, pad_width_pixels, pad_height_pixels)
+        )
 
         # 4. Draw Rocket Parts (Body + Legs)
         self._draw_physics_objects()

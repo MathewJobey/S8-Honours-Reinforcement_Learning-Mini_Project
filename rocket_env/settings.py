@@ -19,9 +19,9 @@ ROCKET_HEIGHT = 2.5   # Total Height
 NOSE_HEIGHT = 1.0     # Height of the nose cone
 
 # Landing Zone
-PAD_WIDTH_PIXELS = 80
-PAD_HEIGHT_PIXELS = 10
-PAD_WIDTH_METERS = PAD_WIDTH_PIXELS / SCALE
+PAD_WIDTH_METERS = 5  # The pad is 3.5 meters wide in the world
+PAD_HEIGHT_METERS = 0.4
+# We don't set pixels here anymore; we calculate them in the visualizer
 
 # Terrain / World
 GRAVITY_X = 0.0
