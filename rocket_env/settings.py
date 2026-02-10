@@ -12,6 +12,12 @@ SIDE_ENGINE_POWER = 0.6
 INITIAL_FUEL = 100.0
 FUEL_CONSUMPTION_RATE = 5.0  
 
+# --- Rocket Dimensions (In Meters) ---
+# Decoupling these from SCALE allows the zoom to work properly.
+ROCKET_H_WIDTH = 0.5  # Half-width (Total width = 1.0 meter)
+ROCKET_HEIGHT = 2.5   # Total Height
+NOSE_HEIGHT = 1.0     # Height of the nose cone
+
 # Landing Zone
 PAD_WIDTH_PIXELS = 80
 PAD_HEIGHT_PIXELS = 10

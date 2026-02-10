@@ -214,36 +214,50 @@ class RocketLander(gym.Env):
         self.ground.friction = 0.8
 
     def _create_rocket(self):
-        # Random start x (-10 to 10 meters roughly)
-        initial_x = self.np_random.uniform(-0.3, 0.3) * (VIEWPORT_W / SCALE / 2)
+        # Random start x (Centered around 0)
+        # We spawn between -3m and 3m from the center
+        initial_x = self.np_random.uniform(-3.0, 3.0) 
         initial_y = VIEWPORT_H / SCALE
         
+        # 1. Main Body (Dynamic)
         self.lander = self.world.CreateDynamicBody(
             position=(initial_x, initial_y),
             angle=0.0,
             fixtures=fixtureDef(
-                shape=polygonShape(vertices=[(-14/SCALE, 0), (14/SCALE, 0), (14/SCALE, 40/SCALE), (-14/SCALE, 40/SCALE)]),
+                # USE SETTINGS CONSTANTS HERE:
+                shape=polygonShape(vertices=[
+                    (-ROCKET_H_WIDTH, 0), 
+                    (ROCKET_H_WIDTH, 0), 
+                    (ROCKET_H_WIDTH, ROCKET_HEIGHT), 
+                    (-ROCKET_H_WIDTH, ROCKET_HEIGHT)
+                ]),
                 density=5.0, friction=0.1, categoryBits=0x0010, maskBits=0x001, restitution=0.0
             )
         )
         self.lander.color1 = LANDER_COLOR
         
+        # 2. Legs
         self.legs = []
+        # Leg dimensions relative to rocket size
+        leg_w = ROCKET_H_WIDTH * 0.2
+        leg_h = ROCKET_HEIGHT * 0.4
+        
         for i in [-1, 1]:
             leg = self.world.CreateDynamicBody(
-                position=(initial_x - i*10/SCALE, initial_y),
+                position=(initial_x - i * (ROCKET_H_WIDTH * 0.8), initial_y),
                 angle=(i * 0.05),
                 fixtures=fixtureDef(
-                    shape=polygonShape(box=(3/SCALE, 15/SCALE)),
+                    shape=polygonShape(box=(leg_w, leg_h)),
                     density=1.0, restitution=0.0, categoryBits=0x0020, maskBits=0x001
                 )
             )
             leg.ground_contact = False
             self.legs.append(leg)
             
+            # Joints
             rjd = revoluteJointDef(
                 bodyA=self.lander, bodyB=leg,
-                localAnchorA=(0, 0), localAnchorB=(i * 10/SCALE, 15/SCALE),
+                localAnchorA=(0, 0), localAnchorB=(i * (ROCKET_H_WIDTH * 0.8), leg_h),
                 enableMotor=True, enableLimit=True, maxMotorTorque=2000.0, motorSpeed=0.3 * i
             )
             if i == -1: rjd.lowerAngle, rjd.upperAngle = 0.4, 0.9

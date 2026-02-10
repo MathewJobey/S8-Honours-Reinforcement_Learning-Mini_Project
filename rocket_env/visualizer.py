@@ -70,7 +70,7 @@ class RocketVisualizer:
                 
                 # Color logic
                 if obj == self.env.lander:
-                    color = (150,150,150)  # Light grey for rocket body
+                    color = (150, 150, 150)  # Light grey for rocket body
                 else:
                     color = LEG_COLOR
                 
@@ -81,7 +81,7 @@ class RocketVisualizer:
                 self._draw_rocket_details(obj)
 
     def _draw_rocket_details(self, lander):
-        """Draws cosmetic Nose Cone, Fins, and Window on the rocket."""
+        """Draws cosmetic Nose Cone, Fins, and Window using METRIC dimensions."""
         pos = lander.position
         angle = lander.angle
         
@@ -98,37 +98,50 @@ class RocketVisualizer:
             screen_y = VIEWPORT_H - (SCALE * world_y) - 10
             return (screen_x, screen_y)
 
+        # --- USE METRIC CONSTANTS FROM SETTINGS.PY ---
+        # This ensures the visuals match the zoom level (SCALE)
+        half_w = ROCKET_H_WIDTH
+        body_h = ROCKET_HEIGHT
+        nose_h = NOSE_HEIGHT
+
         # A. NOSE CONE (Triangle on top)
-        # The body is approx 40 units high (0 to 40 in local coords)
-        # We draw a triangle from the top corners to a center point higher up
+        # Base is at body_h, Tip is at body_h + nose_h
         nose_points = [
-            transform_point(-14/SCALE, 40/SCALE), # Top Left of body
-            transform_point(14/SCALE, 40/SCALE),  # Top Right of body
-            transform_point(0, 60/SCALE)          # Tip of nose
+            transform_point(-half_w, body_h), # Top Left of body
+            transform_point(half_w, body_h),  # Top Right of body
+            transform_point(0, body_h + nose_h) # Tip of nose
         ]
         pygame.draw.polygon(self.screen, (255, 50, 50), nose_points) # Light Red Nose
 
         # B. FINS (Triangles at bottom)
+        # Dimensions relative to rocket size
+        fin_h = body_h * 0.4   # Fins go up 40% of body
+        fin_w = half_w * 0.8   # Fins stick out 80% of width
+        fin_drop = body_h * 0.1 # Fins drop slightly below body
+
         # Left Fin
         left_fin = [
-            transform_point(-14/SCALE, 0),        # Body attach point
-            transform_point(-14/SCALE, 15/SCALE), # Higher attach point
-            transform_point(-25/SCALE, -5/SCALE)  # Wing tip
+            transform_point(-half_w, 0),          # Body attach point (bottom)
+            transform_point(-half_w, fin_h),      # Body attach point (top)
+            transform_point(-half_w - fin_w, -fin_drop)  # Wing tip
         ]
-        pygame.draw.polygon(self.screen, (255, 50, 50), left_fin) # Dark Grey
+        pygame.draw.polygon(self.screen, (255, 50, 50), left_fin) # Light Red
 
         # Right Fin
         right_fin = [
-            transform_point(14/SCALE, 0),
-            transform_point(14/SCALE, 15/SCALE),
-            transform_point(25/SCALE, -5/SCALE)
+            transform_point(half_w, 0),
+            transform_point(half_w, fin_h),
+            transform_point(half_w + fin_w, -fin_drop)
         ]
         pygame.draw.polygon(self.screen, (255, 50, 50), right_fin)
 
         # C. COCKPIT WINDOW (Blue Circle)
-        # Located near the top (y=30 local)
-        window_center = transform_point(0, 30/SCALE)
-        pygame.draw.circle(self.screen, (0, 200, 255), (int(window_center[0]), int(window_center[1])), int(5/SCALE * 30)) # Scaled radius
+        # Located near the top (75% up the body)
+        window_center = transform_point(0, body_h * 0.75)
+        # Radius is 40% of the half-width
+        radius = int(SCALE * (half_w * 0.4))
+        pygame.draw.circle(self.screen, (0, 200, 255), (int(window_center[0]), int(window_center[1])), radius)
+        
 
     def _draw_exhaust(self):
         """Draws a multi-layered, flickering flame for realistic effect."""
