@@ -1,34 +1,39 @@
 import gymnasium as gym
 import rocket_env
-import time  # Import time to add pauses
+import time
 
-# 1. Create the environment
+# Create Env
 env = gym.make("RocketLander-v0", render_mode="human")
-
-# 2. Reset the world
 observation, info = env.reset()
 
 print("Environment created!")
 print("Press Ctrl+C to stop...")
 
-# 3. Run the loop
+# Variable to track the TOTAL score of the current episode
+total_score = 0.0
+
 for _ in range(2000):
-    # Take a random action
+    # Random Action (Just for testing visuals)
     action = env.action_space.sample() 
     
-    # Step the physics
+    # Run Physics
     observation, reward, terminated, truncated, info = env.step(action)
     
-    # Render
+    # Add this frame's reward to the total
+    total_score += reward
+    
+    # Draw
     env.render()
     
     if terminated or truncated:
-        # --- IMPROVEMENT: PAUSE ON CRASH ---
-        # If we crashed or landed, pause for 1 second so we can see what happened.
-        print(f"Episode Finished. Reward: {reward:.2f}")
-        time.sleep(1.0) 
+        # Print the Final Report Card
+        print(f">>> Episode Finished. Total Score: {total_score:.2f}")
         
-        # Then reset
+        # Pause to let you see the landing/crash
+        time.sleep(1.0)
+        
+        # Reset
         observation, info = env.reset()
+        total_score = 0.0
 
-env.close()
+env.close()             

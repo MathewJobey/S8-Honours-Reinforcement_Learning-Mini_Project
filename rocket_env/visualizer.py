@@ -56,20 +56,79 @@ class RocketVisualizer:
             )
 
     def _draw_physics_objects(self):
-        """Draws the rocket body and legs based on Box2D coordinates."""
+        """Draws the rocket body and legs, plus cosmetic details (Nose Cone, Fins)."""
         for obj in self.env.drawlist:
+            # 1. Draw the Base Physics Shape (The Rectangle)
             for f in obj.fixtures:
                 trans = f.body.transform
                 path = [trans * v for v in f.shape.vertices]
                 
-                # Convert Box2D coords to Screen coords
                 pixel_path = [
                     (SCALE * v[0] + VIEWPORT_W / 2, VIEWPORT_H - SCALE * v[1] - 10)
                     for v in path
                 ]
                 
-                color = LANDER_COLOR if obj == self.env.lander else LEG_COLOR
+                # Color logic
+                if obj == self.env.lander:
+                    color = (150,150,150)  # Light grey for rocket body
+                else:
+                    color = LEG_COLOR
+                
                 pygame.draw.polygon(self.screen, color, pixel_path)
+
+            # 2. If this is the Rocket Body, draw the "Skin" (Decorations)
+            if obj == self.env.lander:
+                self._draw_rocket_details(obj)
+
+    def _draw_rocket_details(self, lander):
+        """Draws cosmetic Nose Cone, Fins, and Window on the rocket."""
+        pos = lander.position
+        angle = lander.angle
+        
+        # Helper to rotate local points to screen points
+        def transform_point(local_x, local_y):
+            # Rotate
+            rot_x = local_x * math.cos(angle) - local_y * math.sin(angle)
+            rot_y = local_x * math.sin(angle) + local_y * math.cos(angle)
+            # Translate to World
+            world_x = pos.x + rot_x
+            world_y = pos.y + rot_y
+            # Scale to Screen
+            screen_x = (SCALE * world_x) + (VIEWPORT_W / 2)
+            screen_y = VIEWPORT_H - (SCALE * world_y) - 10
+            return (screen_x, screen_y)
+
+        # A. NOSE CONE (Triangle on top)
+        # The body is approx 40 units high (0 to 40 in local coords)
+        # We draw a triangle from the top corners to a center point higher up
+        nose_points = [
+            transform_point(-14/SCALE, 40/SCALE), # Top Left of body
+            transform_point(14/SCALE, 40/SCALE),  # Top Right of body
+            transform_point(0, 60/SCALE)          # Tip of nose
+        ]
+        pygame.draw.polygon(self.screen, (255, 50, 50), nose_points) # Light Red Nose
+
+        # B. FINS (Triangles at bottom)
+        # Left Fin
+        left_fin = [
+            transform_point(-14/SCALE, 0),        # Body attach point
+            transform_point(-14/SCALE, 15/SCALE), # Higher attach point
+            transform_point(-25/SCALE, -5/SCALE)  # Wing tip
+        ]
+        pygame.draw.polygon(self.screen, (255, 50, 50), left_fin) # Dark Grey
+
+        # Right Fin
+        right_fin = [
+            transform_point(14/SCALE, 0),
+            transform_point(14/SCALE, 15/SCALE),
+            transform_point(25/SCALE, -5/SCALE)
+        ]
+        pygame.draw.polygon(self.screen, (255, 50, 50), right_fin)
+
+        # C. COCKPIT WINDOW (Blue Circle)
+        # Located near the top (y=30 local)
+        window_center = transform_point(0, 30/SCALE)
+        pygame.draw.circle(self.screen, (0, 200, 255), (int(window_center[0]), int(window_center[1])), int(5/SCALE * 30)) # Scaled radius
 
     def _draw_exhaust(self):
         """Draws a multi-layered, flickering flame for realistic effect."""

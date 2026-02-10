@@ -1,21 +1,26 @@
 # Configuration Constants
 
 # Screen / Rendering
-FPS = 50
-SCALE = 30.0  # affects how large the screen elements are
+FPS = 60
+SCALE =20.0   #  affects how large the screen elements are
 VIEWPORT_W = 1000
 VIEWPORT_H = 700
 
 # Rocket Physics
 MAIN_ENGINE_POWER = 13.0
 SIDE_ENGINE_POWER = 0.6
-INITIAL_FUEL = 1000.0   
+INITIAL_FUEL = 100.0
 FUEL_CONSUMPTION_RATE = 5.0  
+
+# Landing Zone
+PAD_WIDTH_PIXELS = 80
+PAD_HEIGHT_PIXELS = 10
+PAD_WIDTH_METERS = PAD_WIDTH_PIXELS / SCALE
 
 # Terrain / World
 GRAVITY_X = 0.0
 GRAVITY_Y = -10.0  
-WIND_POWER_MAX = 1.0 
+WIND_POWER_MAX =1.0 # <--- CHANGED: Set to 0.0 to disable wind for now
 
 # Colors (R, G, B)
 LANDER_COLOR = (128, 102, 230)      # Purple
