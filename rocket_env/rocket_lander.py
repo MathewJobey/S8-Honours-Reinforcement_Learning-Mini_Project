@@ -208,10 +208,22 @@ class RocketLander(gym.Env):
         self.wind_y = self.np_random.uniform(-WIND_POWER_MAX, WIND_POWER_MAX)
 
     def _create_terrain(self):
+        # 1. The flat ground line (Infinite floor at Y=0)
         self.ground = self.world.CreateStaticBody(
             shapes=edgeShape(vertices=[(-VIEWPORT_W / SCALE, 0), (VIEWPORT_W / SCALE, 0)])
         )
-        self.ground.friction = 0.8
+        self.ground.fixtures[0].friction = 0.8 # Apply friction to the created edge fixture
+        
+        # 2. The Landing Pad Block (New Physical Object)
+        # FIX: We use 'fixtures=fixtureDef(...)' to correctly apply friction
+        self.pad_body = self.world.CreateStaticBody(
+            position=(0, PAD_HEIGHT_METERS / 2),
+            fixtures=fixtureDef(
+                shape=polygonShape(box=(PAD_WIDTH_METERS / 2, PAD_HEIGHT_METERS / 2)),
+                friction=1.0,  # High friction so the rocket sticks to it
+                density=0.0    # 0 density for static objects
+            )
+        )
 
     def _create_rocket(self):
         # Random start x (Centered around 0)
