@@ -1,28 +1,34 @@
 import gymnasium as gym
-import rocket_env  # This automatically runs the __init__.py we just wrote!
+import rocket_env
+import time  # Import time to add pauses
 
-# 1. Create the environment using the ID we registered
+# 1. Create the environment
 env = gym.make("RocketLander-v0", render_mode="human")
 
-# 2. Reset the world to start
+# 2. Reset the world
 observation, info = env.reset()
 
-print("Environment created successfully!")
-print(f"Observation Space: {env.observation_space.shape[0]} inputs")
+print("Environment created!")
 print("Press Ctrl+C to stop...")
 
 # 3. Run the loop
-for _ in range(1000):
-    # Take a random action (Main Engine 0-1, Steering -1 to 1)
+for _ in range(2000):
+    # Take a random action
     action = env.action_space.sample() 
     
     # Step the physics
     observation, reward, terminated, truncated, info = env.step(action)
     
-    # Render the frame (this relies on the render() method, which is currently empty!)
+    # Render
     env.render()
     
     if terminated or truncated:
+        # --- IMPROVEMENT: PAUSE ON CRASH ---
+        # If we crashed or landed, pause for 1 second so we can see what happened.
+        print(f"Episode Finished. Reward: {reward:.2f}")
+        time.sleep(1.0) 
+        
+        # Then reset
         observation, info = env.reset()
 
 env.close()
