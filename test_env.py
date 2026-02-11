@@ -1,39 +1,65 @@
 import gymnasium as gym
-import rocket_env
+from stable_baselines3 import PPO
+from rocket_env.rocket_lander import RocketLander
 import time
 
-# Create Env
-env = gym.make("RocketLander-v0", render_mode="human")
-observation, info = env.reset()
+def main():
+    # ---------------------------------------------------------
+    # 1. Load the Environment
+    # ---------------------------------------------------------
+    # render_mode="human" prepares the visualizer, but you still
+    # need to call env.render() in the loop to update the screen.
+    env = RocketLander(render_mode="human")
+    
+    # ---------------------------------------------------------
+    # 2. Load the Trained Brain
+    # ---------------------------------------------------------
+    model_path = "models/ppo_rocket_lander"
+    
+    print(f"Loading model from: {model_path}")
+    try:
+        model = PPO.load(model_path)
+        print("Model loaded successfully! Launching visualization...")
+    except FileNotFoundError:
+        print(f"Error: Could not find '{model_path}.zip'")
+        print("Did you run train.py first?")
+        return
 
-print("Environment created!")
-print("Press Ctrl+C to stop...")
+    # ---------------------------------------------------------
+    # 3. Watch it Fly!
+    # ---------------------------------------------------------
+    episodes = 5
+    
+    for ep in range(episodes):
+        obs, info = env.reset()
+        done = False
+        total_score = 0
+        
+        print(f"\n--- Episode {ep + 1} Starting ---")
+        
+        while not done:
+            # 1. Ask the AI for the best move
+            action, _states = model.predict(obs, deterministic=True)
+            
+            # 2. Run Physics
+            obs, reward, terminated, truncated, info = env.step(action)
+            
+            # 3. DRAW THE FRAME (This was missing!)
+            env.render()  
+            
+            total_score += reward
+            done = terminated or truncated
+            
+            # Optional: Slow down slightly if it's too fast, 
+            # though pygame.clock inside render() usually handles this.
+            # time.sleep(0.01) 
 
-# Variable to track the TOTAL score of the current episode
-total_score = 0.0
-
-for _ in range(2000):
-    # Random Action (Just for testing visuals)
-    action = env.action_space.sample() 
-    
-    # Run Physics
-    observation, reward, terminated, truncated, info = env.step(action)
-    
-    # Add this frame's reward to the total
-    total_score += reward
-    
-    # Draw
-    env.render()
-    
-    if terminated or truncated:
-        # Print the Final Report Card
         print(f">>> Episode Finished. Total Score: {total_score:.2f}")
         
-        # Pause to let you see the landing/crash
-        time.sleep(1.0)
-        
-        # Reset
-        observation, info = env.reset()
-        total_score = 0.0
+        # Pause to see the landing result before resetting
+        time.sleep(2.0)
 
-env.close()             
+    env.close()
+
+if __name__ == "__main__":
+    main()

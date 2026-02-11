@@ -3,3 +3,4 @@ numpy              # For handling math and matrices (speed)
 matplotlib         # For plotting graphs (to see if the agent is improving)
 torch              # (Optional but recommended) The library for the Neural Network later
 stable-baselines3 shimmy # newer version of stable baselines for new gym
+tensorboard         # For visualizing training progress (optional but helpful)
