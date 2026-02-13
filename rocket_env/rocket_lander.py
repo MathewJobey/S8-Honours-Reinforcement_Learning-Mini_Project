@@ -137,57 +137,61 @@ class RocketLander(gym.Env):
         velocity_total = math.sqrt(vel.x**2 + vel.y**2) # Total speed (m/s)
         tilt_rad = abs(angle)               # Tilt in radians (0 is upright)
 
-        # B. Shaping Reward (Hot/Cold Game)
-        # This gives small hints every frame to guide the rocket towards the goal.
-        # We penalize being far away, moving fast, or spinning.
-        shaping = \
-            - 100 * math.sqrt(dist_x_meters**2 + dist_y_meters**2) \
-            - 100 * velocity_total \
-            - 100 * tilt_rad
+        # --- 5. CALCULATE REWARD ---
+        reward = 0
+        terminated = False 
+        truncated = False
+        
+        # A. Metric Calculations
+        dist_x_meters = abs(pos.x)          
+        dist_y_meters = abs(pos.y)          
+        velocity_total = math.sqrt(vel.x**2 + vel.y**2) 
+        tilt_rad = abs(angle)               
 
-        # Calculate the "Delta" (Improvement) since last frame
+        # B. Shaping Reward (Hot/Cold Game)
+        # CHANGED: We reduced the multiplier from -100 to -10.
+        # This prevents the rocket from rushing to the ground just to get points.
+        shaping = \
+            - 10.0 * math.sqrt(dist_x_meters**2 + dist_y_meters**2) \
+            - 10.0 * velocity_total \
+            - 20.0 * tilt_rad 
+
         if self.prev_shaping is not None:
             reward = shaping - self.prev_shaping
         self.prev_shaping = shaping
 
-        # Fuel Penalty (Small cost per frame to prevent hovering forever)
-        reward -= main_engine_power * 0.10
+        # Fuel Penalty
+        reward -= main_engine_power * 0.15
         
-        # C. Terminal Rewards (The "Report Card" from your Table)
+        # C. Terminal Rewards (The Report Card)
         
         # 1. CRASH Conditions
-        if self.game_over or abs(state[0]) >= 1.0 or tilt_rad > 0.78:
+        # We define a crash as hitting the ground body, moving off screen, OR tilting too much.
+        if self.game_over or abs(state[0]) >= 1.0 or tilt_rad > 0.5:
             terminated = True
-            reward = -100 
-            self.landing_status = "CRASH" # <--- ADD THIS LINE
+            # CHANGED: Huge penalty (-1000). Crashing is now the worst possible outcome.
+            reward = -1000  
+            self.landing_status = "CRASH"
             
         # 2. LANDING Conditions
-        elif not self.lander.awake:
-            terminated = True
-            reward = 100 
-            self.landing_status = "LANDED" # <--- ADD THIS LINE
-            
-            # --- ACCURACY (Bullseye vs Pad vs Grass) ---
-            # Pad Radius is half the width (approx 1.33 meters)
-            pad_radius = PAD_WIDTH_METERS / 2
-            
-            if dist_x_meters < 0.2:
-                reward += 50  # "Accuracy: Distance < 0.2m (Bullseye)"
-            elif dist_x_meters < pad_radius:
-                reward += 20  # "Accuracy: Distance < Pad Width"
-            else:
-                reward -= 20  # "Accuracy: Missed Pad (Landed on grass)"
+        elif self.legs[0].ground_contact and self.legs[1].ground_contact:
+            # It only counts as a landing if speed is SLOW (soft landing)
+            if velocity_total < 0.5: 
+                terminated = True
+                # CHANGED: Huge reward (+1000). This is the only way to "win".
+                reward = 1000 
+                self.landing_status = "LANDED"
                 
-            # --- SOFTNESS (Butter vs Hard) ---
-            if velocity_total < 0.5:
-                reward += 30  # "Softness: Speed < 0.5 m/s"
-            elif velocity_total > 2.0:
-                reward -= 30  # "Softness: Speed > 2.0 m/s"
-                
-            # --- STYLE (Upright) ---
-            if tilt_rad < 0.05:
-                reward += 20  # "Style: Tilt < 0.05 rad"
-
+                # Bonus for accuracy (Bullseye)
+                if dist_x_meters < 0.5:
+                    reward += 500
+            
+            # If legs touch but speed is too high, it's a "Hard Landing" (Crash)
+            elif velocity_total > 1.5:
+                terminated = True
+                reward = -500 
+                self.landing_status = "CRASH"
+        
         return np.array(state, dtype=np.float32), reward, terminated, truncated, {}
 
     def render(self):
