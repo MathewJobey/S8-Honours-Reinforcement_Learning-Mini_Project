@@ -69,8 +69,6 @@ class RocketLander(gym.Env):
             
         # --- SAVE FOR VISUALIZER ---
         self.main_engine_power = main_engine_power
-        # We don't strictly need side_engine_power for the current HUD, 
-        # but good to keep if you add it back later.
         
         # 2. Apply Physics Forces
         angle = self.lander.angle
@@ -85,7 +83,6 @@ class RocketLander(gym.Env):
         impulse_x = float(-side_force * math.cos(angle))
         impulse_y = float(-side_force * math.sin(angle))
         
-        # FIX: Apply side thrust at Center (0,0) to push sideways without wild spinning
         self.lander.ApplyLinearImpulse(
             (impulse_x, impulse_y), 
             self.lander.GetWorldPoint(localPoint=(0, 0)), 
@@ -105,15 +102,12 @@ class RocketLander(gym.Env):
         pos = self.lander.position
         vel = self.lander.linearVelocity
         
-        # FIX: Coordinate Normalization
-        # Previous code subtracted view width, confusing Center with Left Edge.
-        # Now: 0 is Center, -1 is Left Edge, +1 is Right Edge.
         world_width_half = VIEWPORT_W / SCALE / 2
         world_height = VIEWPORT_H / SCALE
         
         state = [
-            pos.x / world_width_half,       # X Position (-1 to 1)
-            (pos.y / world_height) - 0.5,   # Y Position
+            pos.x / world_width_half,       
+            (pos.y / world_height) - 0.5,   
             vel.x * (world_width_half) / FPS,
             vel.y * (world_height) / FPS,
             self.lander.angle,
@@ -125,19 +119,7 @@ class RocketLander(gym.Env):
             self.wind_y / WIND_POWER_MAX
         ]
         
-        # --- 5. CALCULATE REWARD ---
-        reward = 0
-        terminated = False 
-        truncated = False
-        
-        # A. Metric Calculations (The Physics Data)
-        # We use absolute values because "distance" is always positive
-        dist_x_meters = abs(pos.x)          # Horizontal distance from center (0.0)
-        dist_y_meters = abs(pos.y)          # Vertical altitude
-        velocity_total = math.sqrt(vel.x**2 + vel.y**2) # Total speed (m/s)
-        tilt_rad = abs(angle)               # Tilt in radians (0 is upright)
-
-        # --- 5. CALCULATE REWARD ---
+        # --- 5. CALCULATE REWARD (Corrected) ---
         reward = 0
         terminated = False 
         truncated = False
@@ -148,9 +130,8 @@ class RocketLander(gym.Env):
         velocity_total = math.sqrt(vel.x**2 + vel.y**2) 
         tilt_rad = abs(angle)               
 
-        # B. Shaping Reward (Hot/Cold Game)
-        # CHANGED: We reduced the multiplier from -100 to -10.
-        # This prevents the rocket from rushing to the ground just to get points.
+        # B. Shaping Reward
+        # We use small multipliers (-10) so it doesn't overpower the landing reward
         shaping = \
             - 10.0 * math.sqrt(dist_x_meters**2 + dist_y_meters**2) \
             - 10.0 * velocity_total \
@@ -160,38 +141,41 @@ class RocketLander(gym.Env):
             reward = shaping - self.prev_shaping
         self.prev_shaping = shaping
 
-        # Fuel Penalty
-        reward -= main_engine_power * 0.15
+        # --- KEY FIX 1: Make Fuel Cheap ---
+        # Was 0.15 -> Now 0.03
+        # This encourages the AI to use the engine instead of falling.
+        reward -= main_engine_power * 0.03
         
-        # C. Terminal Rewards (The Report Card)
+        # --- KEY FIX 2: Survival Bonus ---
+        # We give it +0.05 points for every frame it stays alive.
+        # This forces it to fight gravity to farm points.
+        reward += 0.05
+
+        # C. Terminal Rewards
         
         # 1. CRASH Conditions
-        # We define a crash as hitting the ground body, moving off screen, OR tilting too much.
         if self.game_over or abs(state[0]) >= 1.0 or tilt_rad > 0.5:
             terminated = True
-            # CHANGED: Huge penalty (-1000). Crashing is now the worst possible outcome.
-            reward = -1000  
+            # We use -100 (not -1000) so it's not too afraid to explore actions.
+            reward = -100 
             self.landing_status = "CRASH"
             
         # 2. LANDING Conditions
         elif self.legs[0].ground_contact and self.legs[1].ground_contact:
-            # It only counts as a landing if speed is SLOW (soft landing)
             if velocity_total < 0.5: 
                 terminated = True
-                # CHANGED: Huge reward (+1000). This is the only way to "win".
-                reward = 1000 
+                reward = 100 # Safe Landing
                 self.landing_status = "LANDED"
                 
-                # Bonus for accuracy (Bullseye)
+                # Bonus for accuracy
                 if dist_x_meters < 0.5:
-                    reward += 500
+                    reward += 50
             
-            # If legs touch but speed is too high, it's a "Hard Landing" (Crash)
             elif velocity_total > 1.5:
                 terminated = True
-                reward = -500 
+                reward = -50 # Hard Landing
                 self.landing_status = "CRASH"
-        
+
         return np.array(state, dtype=np.float32), reward, terminated, truncated, {}
 
     def render(self):
