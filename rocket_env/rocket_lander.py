@@ -135,7 +135,7 @@ class RocketLander(gym.Env):
         terminated = False 
         truncated = False
         
-        # Extract raw physics data for calculation
+        # Extract raw physics data
         pos = self.lander.position
         vel = self.lander.linearVelocity
         
@@ -154,9 +154,12 @@ class RocketLander(gym.Env):
             reward = shaping - self.prev_shaping
         self.prev_shaping = shaping
 
-        # --- B. Incentives (The "Lazy Pilot" Fix) ---
-        reward -= main_engine_power * 0.03  # Cheap fuel
-        reward += 0.05                      # Survival bonus
+        # --- B. Incentives ---
+        # 1. Fuel Cost:
+        # We charge points for using fuel. 
+        # Since we removed the "Survival Bonus", hovering results in a net LOSS.
+        # This makes the rocket "hungry" to land quickly.
+        reward -= main_engine_power * 0.03
 
         # --- C. Terminal States (Win/Loss) ---
         
@@ -185,6 +188,7 @@ class RocketLander(gym.Env):
                 self.landing_status = "CRASH"
         
         return reward, terminated, truncated
+    
 
     def render(self):
         return self.visualizer.render(self.render_mode)
