@@ -2,7 +2,7 @@
 
 # Screen / Rendering
 FPS = 60
-SCALE =15.0   #  affects how large the screen elements are
+SCALE =10.0   #  affects how large the screen elements are
 VIEWPORT_W = 800
 VIEWPORT_H = 800
 
@@ -18,12 +18,12 @@ FUEL_CONSUMPTION_RATE = 5.0
 # Real Starship: 50m High, 9m Wide (Ratio ~5.5:1)
 # Sim Starship: 10m High, 1.8m Wide (Scaled down 1:5 for stability)
 ROCKET_HEIGHT = 10.0   
-ROCKET_H_WIDTH = 0.9   # Total width = 1.8m. (10 / 1.8 = 5.55 Ratio)
+ROCKET_H_WIDTH = 0.9   # Total width = 1.8m. (10 / 1.8 = 5.55 Ratio)(its half-width is 0.9m)
 NOSE_HEIGHT = 2.5      # The nose cone is roughly top 1/4th
 
 # Landing Zone
 PAD_WIDTH_METERS = 20.0  # Slightly wider pad for the larger ship
-PAD_HEIGHT_METERS = 1.5
+PAD_HEIGHT_METERS = 1.0
 
 # Terrain
 GRAVITY_X = 0.0
