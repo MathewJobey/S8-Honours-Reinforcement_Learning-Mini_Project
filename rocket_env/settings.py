@@ -3,8 +3,8 @@
 # Screen / Rendering
 FPS = 60
 SCALE =10.0   #  affects how large the screen elements are
-VIEWPORT_W = 800
-VIEWPORT_H = 800
+VIEWPORT_W = 700
+VIEWPORT_H = 750
 
 ## Rocket Physics
 # Starship is heavy! We need massive thrust to catch the fall.
