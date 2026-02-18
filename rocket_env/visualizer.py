@@ -2,6 +2,7 @@ import pygame
 import math
 import numpy as np
 import random 
+import os
 from .settings import *
 
 class RocketVisualizer:
@@ -15,7 +16,12 @@ class RocketVisualizer:
         self.camera_y = 0.0  # Tracks camera altitude
     
     def init_window(self):
-        """Initializes Pygame window and generates static stars."""
+        if self.screen is None:
+            # --- FIX 1: CENTER WINDOW ---
+            # This forces the window to open in the middle of your monitor,
+            # keeping it clear of the taskbar.
+            os.environ['SDL_VIDEO_CENTERED'] = '1'
+            
         if self.screen is None:
             pygame.init()
             pygame.display.init()
@@ -69,10 +75,13 @@ class RocketVisualizer:
         pad_h_px = int(PAD_HEIGHT_METERS * SCALE)
         pad_screen_x, pad_screen_y = world_to_screen(0, PAD_HEIGHT_METERS)
         
-        # Pad Rect
+        # Pad Rect with yellow and black stripes
         pad_rect = (pad_screen_x - pad_w_px//2, pad_screen_y, pad_w_px, pad_h_px)
-        pygame.draw.rect(self.screen, PAD_COLOR_1, pad_rect)
-        pygame.draw.rect(self.screen, (0,0,0), pad_rect, 2) # Outline
+        stripe_width = 10
+        for x in range(pad_screen_x - pad_w_px//2, pad_screen_x + pad_w_px//2, stripe_width * 2):
+            pygame.draw.rect(self.screen, (255, 255, 0), (x, pad_screen_y, stripe_width, pad_h_px))
+            pygame.draw.rect(self.screen, (0, 0, 0), (x + stripe_width, pad_screen_y, stripe_width, pad_h_px))
+        pygame.draw.rect(self.screen, (0, 0, 0), pad_rect, 2)  # Outline
 
         # Status Lights
         status = getattr(self.env, 'landing_status', "IN_PROGRESS")
@@ -208,16 +217,16 @@ class RocketVisualizer:
         vel = self.env.lander.linearVelocity
         pos = self.env.lander.position
         
-        # Black Text for visibility against Sky
+        # White Text for visibility against Sky
         texts = [
-            f"Altitude: {pos.y:.1f} m",
-            f"X Vel: {vel.x:.1f} m/s",
-            f"Y Vel: {vel.y:.1f} m/s",
+            f"Altitude: {abs(pos.y):.1f} m",
+            f"X Vel: {abs(vel.x):.1f} m/s",
+            f"Y Vel: {abs(vel.y):.1f} m/s",
             f"Angle: {math.degrees(self.env.lander.angle):.1f}"
         ]
         
         for i, t in enumerate(texts):
-            label = self.font.render(t, True, (0, 0, 0)) 
+            label = self.font.render(t, True, (255, 255, 255)) 
             self.screen.blit(label, (10, 10 + (i * 20)))
 
         # Fuel Bar
@@ -228,8 +237,8 @@ class RocketVisualizer:
         pygame.draw.rect(self.screen, (255,255,255), (bar_x, bar_y, 200, 20), 2)
         pygame.draw.rect(self.screen, (0,255,0), (bar_x+2, bar_y+2, 196 * fuel_pct, 16))
         
-        lbl = self.font.render("FUEL", True, (0,0,0))
-        self.screen.blit(lbl, (bar_x, bar_y - 20))
+        lbl = self.font.render("FUEL", True, (255, 255, 255))
+        self.screen.blit(lbl, (bar_x, bar_y - 25))
 
     def close(self):
         if self.screen is not None:
