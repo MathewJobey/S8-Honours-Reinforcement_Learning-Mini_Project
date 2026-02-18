@@ -28,7 +28,7 @@ PAD_HEIGHT_METERS = 1.0
 # Terrain
 GRAVITY_X = 0.0
 GRAVITY_Y = -9.8  
-WIND_POWER_MAX = 1.0
+WIND_POWER_MAX = 0.0
 
 # Colors (R, G, B)
 LANDER_COLOR = (192, 192, 192)      # Stainless Steel Silver

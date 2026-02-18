@@ -16,19 +16,20 @@ class RocketLander(gym.Env):
         self.render_mode = render_mode
         self.world = None
         self.lander = None
-        self.legs = []
+        # self.legs = []  <-- Deleted
         self.main_engine_power = 0.0
         self.landing_status = "IN_PROGRESS"
         
-        # Initialize Visualizer
         self.visualizer = RocketVisualizer(self)
 
-        # Observation Space (11 inputs)
+        # --- UPDATE THIS ---
+        # Old: shape=(11,)
+        # New: shape=(7,)  [x, y, vx, vy, angle, angular_vel, fuel]
         self.observation_space = spaces.Box(
-            low=-np.inf, high=np.inf, shape=(11,), dtype=np.float32
+            low=-np.inf, high=np.inf, shape=(7,), dtype=np.float32
         )
         
-        # Action Space (Main Engine, Steering)
+        # Action Space stays the same
         self.action_space = spaces.Box(
             low=np.array([0.0, -1.0]), 
             high=np.array([1.0, 1.0]), 
@@ -39,7 +40,6 @@ class RocketLander(gym.Env):
         super().reset(seed=seed)
         self._destroy()
         
-        # 1. Create Physics World
         self.world = Box2D.b2World(gravity=(GRAVITY_X, GRAVITY_Y))
         self.world.contactListener_keepref = ContactDetector(self)
         self.world.contactListener = self.world.contactListener_keepref
@@ -49,16 +49,30 @@ class RocketLander(gym.Env):
         self.fuel_left = INITIAL_FUEL
         self.landing_status = "IN_PROGRESS"
 
-        # 2. Create Objects
-        self._generate_wind()
+        #self._generate_wind()
         self._create_terrain()
         self._create_rocket()
 
-        # 3. Initial Step to get observation
+        # --- BELLY FLOP INITIALIZATION ---
+        # 1. Start High (80% of screen height)
+        # 2. Start Sideways (90 degrees / 1.57 radians)
+        # 3. Start with random velocity
+        
+        start_y = (VIEWPORT_H / SCALE) * 0.9 
+        self.lander.position = (0, start_y)
+        
+        # Randomize orientation (+/- 90 deg) to force it to learn both sides
+        if self.np_random.random() > 0.5:
+            self.lander.angle = 1.57  # 90 degrees (Horizontal)
+        else:
+            self.lander.angle = -1.57 # -90 degrees
+            
+        # Give it a nudge so it drifts
+        self.lander.linearVelocity = (self.np_random.uniform(-10, 10), -10)
+
         return self.step(np.array([0, 0]))[0], {}
 
     def step(self, action):
-        # 1. Prepare Action
         action = np.clip(action, -1, 1) 
         main_engine_power = np.clip(action[0], 0.0, 1.0)
         side_engine_power = np.clip(action[1], -1.0, 1.0)
@@ -69,65 +83,82 @@ class RocketLander(gym.Env):
             
         self.main_engine_power = main_engine_power
         
-        # 2. Apply Physics Forces
+        # Apply Physics (Now includes Drag!)
         self._apply_forces(main_engine_power, side_engine_power)
 
-        # 3. Step Simulation
         self.world.Step(1.0 / FPS, 6, 2)
 
-        # 4. Update Fuel
         if main_engine_power > 0:
             self.fuel_left -= FUEL_CONSUMPTION_RATE / FPS * main_engine_power
 
-        # 5. Get State
         state = self._get_state()
-        
-        # 6. Calculate Reward (Refactored to separate function)
         reward, terminated, truncated = self._compute_reward(state, main_engine_power)
 
         return np.array(state, dtype=np.float32), reward, terminated, truncated, {}
 
     def _apply_forces(self, main_power, side_power):
         angle = self.lander.angle
+        vel = self.lander.linearVelocity
         
-        # Main Engine
+        # 1. Main Engine Force
         main_force_x = float(-math.sin(angle) * main_power * MAIN_ENGINE_POWER)
         main_force_y = float(math.cos(angle) * main_power * MAIN_ENGINE_POWER)
         self.lander.ApplyForceToCenter((main_force_x, main_force_y), wake=True)
         
-        # Side Thrusters
+        # 2. Side Thrusters (Steering)
         side_force = float(side_power * SIDE_ENGINE_POWER)
         impulse_x = float(-side_force * math.cos(angle))
         impulse_y = float(-side_force * math.sin(angle))
-        
         self.lander.ApplyLinearImpulse(
             (impulse_x, impulse_y), 
-            self.lander.GetWorldPoint(localPoint=(0, 0)), 
+            self.lander.GetWorldPoint(localPoint=(0, ROCKET_HEIGHT/2)), 
             wake=True
         )
 
-        # Wind
-        self.lander.ApplyForceToCenter((float(self.wind_x), float(self.wind_y)), wake=True)
+        # 3. AERODYNAMIC DRAG (KEEP THIS!)
+        # This creates the belly-flop physics (slows down when sideways)
+        exposed_area = abs(math.sin(angle)) * 0.9 + 0.1 
+        velocity_squared = vel.x**2 + vel.y**2
+        if velocity_squared > 0:
+            drag_magnitude = 0.5 * velocity_squared * exposed_area
+            
+            speed = math.sqrt(velocity_squared)
+            drag_x = -(vel.x / speed) * drag_magnitude
+            drag_y = -(vel.y / speed) * drag_magnitude
+            
+            self.lander.ApplyForceToCenter((drag_x, drag_y), wake=True)
 
+        # --- IMPORTANT CHECK ---
+        # Ensure there is NO line here like:
+        # self.lander.ApplyForceToCenter((self.wind_x, self.wind_y))
+        # If there is, DELETE IT.
+        
     def _get_state(self):
         pos = self.lander.position
         vel = self.lander.linearVelocity
         
-        world_width_half = VIEWPORT_W / SCALE / 2
-        world_height = VIEWPORT_H / SCALE
+        # 1. SCALE CONSTANTS
+        # Viewport width in meters: 800 / 10 = 80m. Half = 40m.
+        world_width_half = VIEWPORT_W / SCALE / 2 
+        
+        # Max Altitude: We spawn at 350m, so let's normalize against 400m.
+        # This gives a value like 0.875, which is perfect for Neural Networks (0 to 1).
+        MAX_ALTITUDE = 400.0
         
         return [
-            pos.x / world_width_half,       
-            (pos.y / world_height) - 0.5,   
-            vel.x * (world_width_half) / FPS,
-            vel.y * (world_height) / FPS,
-            self.lander.angle,
-            self.lander.angularVelocity,
-            1.0 if self.legs[0].ground_contact else 0.0,
-            1.0 if self.legs[1].ground_contact else 0.0,
-            self.fuel_left / INITIAL_FUEL,
-            self.wind_x / WIND_POWER_MAX,
-            self.wind_y / WIND_POWER_MAX
+            pos.x / world_width_half,       # 1. Horizontal Position (-1 to 1)
+            pos.y / MAX_ALTITUDE,           # 2. Vertical Position (0 to 1)
+            
+            vel.x / 50.0,                   # 3. Horizontal Velocity (Normalized by approx max speed)
+            vel.y / 50.0,                   # 4. Vertical Velocity
+            
+            self.lander.angle,              # 5. Angle
+            self.lander.angularVelocity,    # 6. Angular Velocity
+            
+            self.fuel_left / INITIAL_FUEL   # 7. Fuel
+            
+            # REMOVED: Legs (No longer exist)
+            # REMOVED: Wind (Disabled)
         ]
 
     def _compute_reward(self, state, main_engine_power):
@@ -135,60 +166,58 @@ class RocketLander(gym.Env):
         terminated = False 
         truncated = False
         
-        # Extract raw physics data
         pos = self.lander.position
         vel = self.lander.linearVelocity
         
-        dist_x_meters = abs(pos.x)          
-        dist_y_meters = abs(pos.y)          
-        velocity_total = math.sqrt(vel.x**2 + vel.y**2) 
-        tilt_rad = abs(self.lander.angle)               
-
-        # --- A. Shaping Reward (Guidance) ---
-        shaping = \
-            - 10.0 * math.sqrt(dist_x_meters**2 + dist_y_meters**2) \
-            - 10.0 * velocity_total \
-            - 20.0 * tilt_rad 
-
-        if self.prev_shaping is not None:
-            reward = shaping - self.prev_shaping
-        self.prev_shaping = shaping
-
-        # --- B. Incentives ---
-        # 1. Fuel Cost:
-        # We charge points for using fuel. 
-        # Since we removed the "Survival Bonus", hovering results in a net LOSS.
-        # This makes the rocket "hungry" to land quickly.
-        reward -= main_engine_power * 0.03
-
-        # --- C. Terminal States (Win/Loss) ---
+        # Use target repo's normalization logic for better signals
+        x_range = VIEWPORT_W / SCALE / 2
+        y_range = VIEWPORT_H / SCALE
         
-        # 1. CRASH CHECK
-        if self.game_over or abs(state[0]) >= 1.0 or tilt_rad > 0.5:
+        dist_x = abs(pos.x)
+        dist_y = abs(pos.y - PAD_HEIGHT_METERS)
+        
+        # 1. Distance Reward (Normalized 0 to 1)
+        dist_norm = (dist_x / x_range) + (dist_y / y_range)
+        dist_reward = 1.0 - min(1.0, dist_norm)
+        
+        # 2. Orientation Reward
+        # We relax this slightly at high altitudes to allow the flop,
+        # but penalties ramp up as it gets closer.
+        tilt_rad = abs(self.lander.angle)
+        pose_reward = 1.0 - min(1.0, tilt_rad / 1.5)
+        
+        # Continuous Reward
+        reward += 0.1 * dist_reward
+        reward += 0.1 * pose_reward
+        
+        # Fuel Cost (Encourage Efficiency)
+        reward -= main_engine_power * 0.05
+
+        # --- TERMINAL STATES ---
+        velocity_total = math.sqrt(vel.x**2 + vel.y**2)
+        
+        # Crash conditions
+        if self.game_over or abs(pos.x) >= x_range or tilt_rad > 1.2:
             terminated = True
-            reward = -100 
+            reward = -100
             self.landing_status = "CRASH"
             
-        # 2. LANDING CHECK
+        # Landing conditions
         elif self.legs[0].ground_contact and self.legs[1].ground_contact:
-            # Must be slow (Soft Landing)
-            if velocity_total < 0.5: 
+            # Must be SLOW and UPRIGHT
+            if velocity_total < 1.5 and tilt_rad < 0.2: 
                 terminated = True
                 reward = 100 
                 self.landing_status = "LANDED"
-                
-                # Accuracy Bonus (Center of Pad)
-                if dist_x_meters < 0.5:
+                if dist_x < 2.0: # Precision Bonus
                     reward += 50
-            
-            # Touching ground but too fast (Crash)
-            elif velocity_total > 1.5:
+            else:
+                # Hard landing (too fast)
                 terminated = True
-                reward = -50 
+                reward = -50
                 self.landing_status = "CRASH"
         
         return reward, terminated, truncated
-    
 
     def render(self):
         return self.visualizer.render(self.render_mode)
@@ -209,7 +238,7 @@ class RocketLander(gym.Env):
         self.ground = self.world.CreateStaticBody(
             shapes=edgeShape(vertices=[(-VIEWPORT_W / SCALE, 0), (VIEWPORT_W / SCALE, 0)])
         )
-        self.ground.fixtures[0].friction = 0.8 
+        self.ground.fixtures[0].friction = 1.0 
         
         self.pad_body = self.world.CreateStaticBody(
             position=(0, PAD_HEIGHT_METERS / 2),
@@ -221,8 +250,9 @@ class RocketLander(gym.Env):
         )
 
     def _create_rocket(self):
-        initial_x = self.np_random.uniform(-3.0, 3.0) 
-        initial_y = VIEWPORT_H / SCALE
+        # Initial position handled in reset()
+        initial_x = 0
+        initial_y = 0 
         
         # 1. Main Body
         self.lander = self.world.CreateDynamicBody(
@@ -235,15 +265,15 @@ class RocketLander(gym.Env):
                     (ROCKET_H_WIDTH, ROCKET_HEIGHT), 
                     (-ROCKET_H_WIDTH, ROCKET_HEIGHT)
                 ]),
-                density=5.0, friction=0.1, categoryBits=0x0010, maskBits=0x001, restitution=0.0
+                density=5.0, friction=0.5, categoryBits=0x0010, maskBits=0x001, restitution=0.0
             )
         )
         self.lander.color1 = LANDER_COLOR
         
         # 2. Legs
         self.legs = []
-        leg_w = ROCKET_H_WIDTH * 0.2
-        leg_h = ROCKET_HEIGHT * 0.15
+        leg_w = 0.2
+        leg_h = 1.0
         
         for i in [-1, 1]:
             leg = self.world.CreateDynamicBody(
@@ -251,11 +281,7 @@ class RocketLander(gym.Env):
                 angle=(i * 0.05),
                 fixtures=fixtureDef(
                     shape=polygonShape(box=(leg_w, leg_h)),
-                    density=1.0, 
-                    restitution=0.0, 
-                    friction=1.0,    # <--- FIXED: ADDED FRICTION SO LEGS DON'T SLIDE
-                    categoryBits=0x0020, 
-                    maskBits=0x001
+                    density=1.0, restitution=0.0, friction=1.0, categoryBits=0x0020, maskBits=0x001
                 )
             )
             leg.ground_contact = False
@@ -264,7 +290,7 @@ class RocketLander(gym.Env):
             rjd = revoluteJointDef(
                 bodyA=self.lander, bodyB=leg,
                 localAnchorA=(0, 0), localAnchorB=(i * (ROCKET_H_WIDTH * 0.8), leg_h),
-                enableMotor=True, enableLimit=True, maxMotorTorque=2000.0, motorSpeed=0.3 * i
+                enableMotor=True, enableLimit=True, maxMotorTorque=2500.0, motorSpeed=0.3 * i
             )
             if i == -1: rjd.lowerAngle, rjd.upperAngle = 0.4, 0.9
             else: rjd.lowerAngle, rjd.upperAngle = -0.9, -0.4
