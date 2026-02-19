@@ -40,7 +40,6 @@ class RocketLander(gym.Env):
         super().reset(seed=seed)
         self._destroy()
         
-        # Initialize Box2D World
         self.world = Box2D.b2World(gravity=(GRAVITY_X, GRAVITY_Y))
         self.world.contactListener_keepref = ContactDetector(self)
         self.world.contactListener = self.world.contactListener_keepref
@@ -48,9 +47,17 @@ class RocketLander(gym.Env):
         self.game_over = False
         self.fuel_left = INITIAL_FUEL
         self.landing_status = "IN_PROGRESS"
-
+        
+        self.current_drag = 0.0
+        self.current_torque = 0.0
+        
+        # --- NEW: The memory for our smart auto-pilot ---
+        self.angle_error_integral = 0.0 
+        
         self._create_terrain()
         self._create_rocket()
+
+        # ... (rest of the reset function stays exactly the same)
 
         # --- DETERMINISTIC BELLY FLOP SETUP ---
         start_y = 1000.0 
@@ -106,47 +113,69 @@ class RocketLander(gym.Env):
             self.lander.GetWorldPoint(localPoint=(0, ROCKET_HEIGHT/2)), 
             wake=True
         )
+        # ... (inside _apply_forces) ...
+        
+        # Reset them to 0 every frame just in case
+        self.current_drag = 0.0
+        self.current_torque = 0.0
 
-        # 3. AERODYNAMIC DRAG (KEEP THIS!)
-        # This creates the belly-flop physics (slows down when sideways)
+        # 3. AERODYNAMIC DRAG
         exposed_area = abs(math.sin(angle)) * 0.9 + 0.1 
         velocity_squared = vel.x**2 + vel.y**2
         if velocity_squared > 0:
             drag_magnitude = 0.5 * velocity_squared * exposed_area
+            self.current_drag = drag_magnitude
             
             speed = math.sqrt(velocity_squared)
             drag_x = -(vel.x / speed) * drag_magnitude
             drag_y = -(vel.y / speed) * drag_magnitude
             
-            self.lander.ApplyForceToCenter((drag_x, drag_y), wake=True)
+            # --- MODIFIED: Simulate a bottom-heavy rocket ---
+            # Instead of applying drag perfectly to the center, we apply it 
+            # slightly towards the nose. This creates a natural "pitch up" 
+            # force that the flaps must constantly fight.
+            center_y = ROCKET_HEIGHT / 2.0
+            offset_y = center_y + 0.05
+            
+            drag_point = self.lander.GetWorldPoint(localPoint=(0, offset_y))
+            
+            # Apply the force at the offset point instead of the center
+            self.lander.ApplyForce((drag_x, drag_y), drag_point, wake=True)
 
-        # ==========================================
-        # 4. NEW: AERODYNAMIC TORQUE (DART EFFECT)
-        # ==========================================
-        # Calculate the total speed of the rocket
+        # 4. AERODYNAMIC TORQUE (SMART DART EFFECT)
         velocity_total = math.sqrt(velocity_squared)
         
-        # Only apply aerodynamic turning if we are falling fast enough
+        # Only apply aerodynamics if falling fast enough
         if velocity_total > 5.0:
-            
-            # Decide which way the belly is pointing to pick the target angle
             if angle > 0:
-                target_angle = 1.57  # 90 degrees (facing right)
+                target_angle = 1.57  
             else:
-                target_angle = -1.57 # -90 degrees (facing left)
+                target_angle = -1.57 
                 
-            # Calculate how far we are from the perfect bellyflop angle
             angle_error = target_angle - angle
             
-            # Create a "Spring" force to push it back. 
-            # It pushes harder the faster we fall, and the further we tilt.
-            correction_torque = angle_error * velocity_total * 2.0 
+            # 1. Update the Memory
+            self.angle_error_integral += angle_error
             
-            # Create "Air Friction" for spinning so it doesn't wobble forever
-            spin_drag = -self.lander.angularVelocity * velocity_total * 1.5
+            # 2. Calculate the Immediate Push (The Spring)
+            p_term = angle_error * velocity_total * 50.0 
             
-            # Apply the twisting force to the physics body
+            # 3. Calculate the Memory Push 
+            # If the error stays around, this number keeps growing to push it flat
+            i_term = self.angle_error_integral * velocity_total * 0.5
+            
+            # 4. Combine them for the total flap effort
+            correction_torque = p_term + i_term 
+            self.current_torque = correction_torque
+            
+            # 5. The "Air Friction" (prevents wobbling)
+            spin_drag = -self.lander.angularVelocity * velocity_total * 20.0
+            
             self.lander.ApplyTorque(correction_torque + spin_drag, wake=True)
+        else:
+            # If we slow down (like right before landing), clear the memory 
+            # so the rocket doesn't do weird flips from old data.
+            self.angle_error_integral = 0.0
         
     def _get_state(self):
         pos = self.lander.position
