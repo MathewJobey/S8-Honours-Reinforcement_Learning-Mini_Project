@@ -10,7 +10,7 @@ def main():
     # ---------------------------------------------------------
     # CHANGED: 300k -> 1 Million. 
     # The "Belly Flop" is a complex move; the AI needs more practice time!
-    TIMESTEPS = 100000        
+    TIMESTEPS = 20000       
     
     SAVE_PATH = "models/ppo_rocket_lander"
     LOG_DIR = "logs"
