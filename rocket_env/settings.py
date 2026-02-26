@@ -9,7 +9,7 @@ VIEWPORT_H = 750
 ## Rocket Physics
 # Starship is heavy! We need massive thrust to catch the fall.
 # Increased from 300.0 to 1000.0 to handle the larger mass.
-MAIN_ENGINE_POWER = 1000.0 
+MAIN_ENGINE_POWER = 2000.0
 SIDE_ENGINE_POWER = 50.0   # Stronger cold-gas thrusters for the "flip"
 INITIAL_FUEL = 100.0
 FUEL_CONSUMPTION_RATE = 5.0

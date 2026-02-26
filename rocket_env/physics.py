@@ -6,14 +6,13 @@ class ContactDetector(contactListener):
         self.env = env
     
     def BeginContact(self, contact):
-        # We only have one body part now: The Main Hull.
-        # If it touches anything (Ground or Pad), we flag it.
+        # 1. Grab the name tags of whatever just collided. 
+        # (The ground will just say 'None')
+        tag_a = contact.fixtureA.body.userData
+        tag_b = contact.fixtureB.body.userData
         
-        # Note: We don't decide "Crash" vs "Landing" here anymore.
-        # We just say "Contact happened". The _compute_reward() function
-        # in rocket_lander.py checks the speed/angle to decide if it was a good landing.
-        
-        if self.env.lander == contact.fixtureA.body or self.env.lander == contact.fixtureB.body:
+        # 2. If either of those tags says "rocket", trigger the game over!
+        if tag_a == "rocket" or tag_b == "rocket":
             self.env.game_over = True 
             
     def EndContact(self, contact):

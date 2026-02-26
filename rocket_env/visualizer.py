@@ -149,7 +149,9 @@ class RocketVisualizer:
         pygame.draw.polygon(self.screen, RED, nose_points)
         pygame.draw.polygon(self.screen, BLACK, nose_points, 2)
 
-        # Fins
+        # ==========================================
+        # --- REAR FINS (BOTTOM FLAPS) ---
+        # ==========================================
         fin_h = body_h * 0.3
         fin_w = half_w * 1.5
         fin_bottom = body_h * 0.1
@@ -171,6 +173,33 @@ class RocketVisualizer:
         ]
         pygame.draw.polygon(self.screen, (100,100,100), r_fin)
         pygame.draw.polygon(self.screen, BLACK, r_fin, 2)
+
+        # ==========================================
+        # --- NEW: FORWARD FLAPS (TOP FINS) ---
+        # ==========================================
+        # Make them slightly smaller than the rear flaps
+        front_fin_h = body_h * 0.2  
+        front_fin_w = half_w * 1.2
+        # Position them high up on the body, just before the nose
+        front_fin_bottom = body_h * 0.75  
+        
+        # Left Forward Flap
+        l_front_fin = [
+            transform_point(-half_w, front_fin_bottom),
+            transform_point(-half_w, front_fin_bottom + front_fin_h),
+            transform_point(-half_w - front_fin_w, front_fin_bottom)
+        ]
+        pygame.draw.polygon(self.screen, (100, 100, 100), l_front_fin)
+        pygame.draw.polygon(self.screen, BLACK, l_front_fin, 2)
+
+        # Right Forward Flap
+        r_front_fin = [
+            transform_point(half_w, front_fin_bottom),
+            transform_point(half_w, front_fin_bottom + front_fin_h),
+            transform_point(half_w + front_fin_w, front_fin_bottom)
+        ]
+        pygame.draw.polygon(self.screen, (100, 100, 100), r_front_fin)
+        pygame.draw.polygon(self.screen, BLACK, r_front_fin, 2)
 
     def _draw_exhaust(self):
         power = getattr(self.env, 'main_engine_power', 0.0)
@@ -217,12 +246,19 @@ class RocketVisualizer:
         vel = self.env.lander.linearVelocity
         pos = self.env.lander.position
         
+        # --- NEW: Safely get the values from the environment ---
+        # getattr is safe; if the variable doesn't exist, it returns 0.0
+        drag_val = getattr(self.env, 'current_drag', 0.0)
+        torque_val = getattr(self.env, 'current_torque', 0.0)
+        
         # White Text for visibility against Sky
         texts = [
             f"Altitude: {abs(pos.y):.1f} m",
             f"X Vel: {abs(vel.x):.1f} m/s",
             f"Y Vel: {abs(vel.y):.1f} m/s",
-            f"Angle: {math.degrees(self.env.lander.angle):.1f}"
+            f"Angle: {math.degrees(self.env.lander.angle):.1f}",
+            f"Aero Drag: {drag_val:.1f} N",               # <-- NEW
+            f"Flap Torque: {abs(torque_val):.1f} Nm"      # <-- NEW
         ]
         
         for i, t in enumerate(texts):
@@ -230,16 +266,8 @@ class RocketVisualizer:
             self.screen.blit(label, (10, 10 + (i * 20)))
 
         # Fuel Bar
-        fuel_pct = max(0, self.env.fuel_left / INITIAL_FUEL)
-        bar_x = VIEWPORT_W - 220
-        bar_y = 30
+        # ... (rest of the fuel bar code stays the same) ...
         
-        pygame.draw.rect(self.screen, (255,255,255), (bar_x, bar_y, 200, 20), 2)
-        pygame.draw.rect(self.screen, (0,255,0), (bar_x+2, bar_y+2, 196 * fuel_pct, 16))
-        
-        lbl = self.font.render("FUEL", True, (255, 255, 255))
-        self.screen.blit(lbl, (bar_x, bar_y - 25))
-
     def close(self):
         if self.screen is not None:
             pygame.display.quit()

@@ -26,7 +26,7 @@ class Phase1Hover(gym.Env):
         )
         
         self.action_space = spaces.Box(
-            low=np.array([0.0, -1.0]), 
+            low=np.array([-1.0, -1.0]), 
             high=np.array([1.0, 1.0]), 
             dtype=np.float32
         )
@@ -50,14 +50,14 @@ class Phase1Hover(gym.Env):
         self._create_rocket()
 
         # --- PHASE 1 HOVER SETUP ---
-        start_y = 50.0 
+        start_y = 80.0 
         self.lander.position = (0, start_y)
         
         # EXACTLY 0 Degrees (Upright)
         self.lander.angle = 0.0 
         
         # Start stationary (0 horizontal, 0 vertical velocity)
-        self.lander.linearVelocity = (0, 0) 
+        self.lander.linearVelocity = (0, -40) 
 
         return self.step(np.array([0, 0]))[0], {}
     
@@ -111,7 +111,11 @@ class Phase1Hover(gym.Env):
             
         self.main_engine_power = main_engine_power
         
-        # Apply Physics (Now includes Drag!)
+        # --- THE FIX: SAVE VELOCITY BEFORE IMPACT ---
+        vel = self.lander.linearVelocity
+        self.pre_step_velocity = math.sqrt(vel.x**2 + vel.y**2)
+        
+        # Apply Physics
         self._apply_forces(main_engine_power, side_engine_power)
 
         self.world.Step(1.0 / FPS, 6, 2)
@@ -161,7 +165,9 @@ class Phase1Hover(gym.Env):
         vel = self.lander.linearVelocity
         
         x_range = VIEWPORT_W / SCALE / 2
-        y_range = VIEWPORT_H / SCALE
+        
+        # --- FIX 1: EXPAND THE RADAR ---
+        y_range = 600.0 
         
         dist_x = abs(pos.x)
         dist_y = abs(pos.y - PAD_HEIGHT_METERS)
@@ -172,21 +178,30 @@ class Phase1Hover(gym.Env):
         tilt_rad = abs(self.lander.angle)
         pose_reward = 1.0 - min(1.0, tilt_rad / 1.5)
         
+        # 1. Base Rewards: Points for getting closer and staying upright
         reward += 0.1 * dist_reward
         reward += 0.1 * pose_reward
-        reward -= main_engine_power * 0.05
 
-        # --- TERMINAL STATES (NO LEGS) ---
+        # 2. --- THE ANTI-MISSILE FIX ---
+        # Bleed points every single frame it is moving fast. 
+        # This forces it to slam the brakes immediately to survive!
+        speed_penalty = (abs(vel.y) / 40.0) * 0.5
+        reward -= speed_penalty
+
+        # 3. --- TERMINAL STATES (NO LEGS) ---
         velocity_total = math.sqrt(vel.x**2 + vel.y**2)
         
         if self.game_over:
             terminated = True
-            # To land safely, it must be upright and slow
-            if velocity_total < 3.0 and tilt_rad < 0.2: 
+            # We judge the landing based on how fast it was going BEFORE the crash
+            if self.pre_step_velocity < 3.0 and tilt_rad < 0.2: 
                 reward = 100 
                 self.landing_status = "LANDED"
             else:
-                reward = -100
+                # Dynamic Crash Penalty using the true impact speed
+                crash_damage = self.pre_step_velocity * 2.0
+                reward = -100 - crash_damage
+                
                 self.landing_status = "CRASH"
                 
         elif abs(pos.x) >= x_range:
@@ -245,6 +260,9 @@ class Phase1Hover(gym.Env):
             )
         )
         self.lander.color1 = LANDER_COLOR
+        
+        # --- THE FIX: ADD A NAME TAG ---
+        self.lander.userData = "rocket"
         
         # Set drawlist to only include the main hull
         self.drawlist = [self.lander]
