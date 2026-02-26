@@ -246,8 +246,7 @@ class RocketVisualizer:
         vel = self.env.lander.linearVelocity
         pos = self.env.lander.position
         
-        # --- NEW: Safely get the values from the environment ---
-        # getattr is safe; if the variable doesn't exist, it returns 0.0
+        # Safely get the values from the environment
         drag_val = getattr(self.env, 'current_drag', 0.0)
         torque_val = getattr(self.env, 'current_torque', 0.0)
         
@@ -257,16 +256,43 @@ class RocketVisualizer:
             f"X Vel: {abs(vel.x):.1f} m/s",
             f"Y Vel: {abs(vel.y):.1f} m/s",
             f"Angle: {math.degrees(self.env.lander.angle):.1f}",
-            f"Aero Drag: {drag_val:.1f} N",               # <-- NEW
-            f"Flap Torque: {abs(torque_val):.1f} Nm"      # <-- NEW
+            f"Aero Drag: {drag_val:.1f} N",               
+            f"Flap Torque: {abs(torque_val):.1f} Nm"      
         ]
         
         for i, t in enumerate(texts):
             label = self.font.render(t, True, (255, 255, 255)) 
             self.screen.blit(label, (10, 10 + (i * 20)))
 
-        # Fuel Bar
-        # ... (rest of the fuel bar code stays the same) ...
+        # --- MOVED FUEL BAR LOGIC (TOP RIGHT) ---
+        # 1. Get the current fuel and calculate the percentage
+        fuel_left = getattr(self.env, 'fuel_left', 0.0)
+        fuel_ratio = max(0.0, min(1.0, fuel_left / INITIAL_FUEL))
+        
+        # 2. Set the size of the bar
+        bar_w = 150
+        bar_h = 15
+        
+        # Set the position to the Top Right
+        # Subtract the bar width and a 20-pixel margin from the screen width
+        bar_x = VIEWPORT_W - bar_w - 20 
+        bar_y = 35 # Moved down to 35 to make room for the text above it
+
+        # 3. Draw the "FUEL" Text Label
+        fuel_label = self.font.render("FUEL", True, (255, 255, 255))
+        # Place the text aligned with the left edge of the bar, but up near the top (y=10)
+        self.screen.blit(fuel_label, (bar_x, 10))
+
+        # 4. Draw the background (Empty / Red)
+        pygame.draw.rect(self.screen, (150, 0, 0), (bar_x, bar_y, bar_w, bar_h))
+        
+        # 5. Draw the foreground (Full / Green)
+        fill_w = int(bar_w * fuel_ratio)
+        if fill_w > 0:
+            pygame.draw.rect(self.screen, FUEL_BAR_COLOR_FULL, (bar_x, bar_y, fill_w, bar_h))
+            
+        # 6. Draw the white outline border
+        pygame.draw.rect(self.screen, FUEL_BAR_BORDER, (bar_x, bar_y, bar_w, bar_h), 2)
         
     def close(self):
         if self.screen is not None:
