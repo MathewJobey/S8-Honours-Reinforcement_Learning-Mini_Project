@@ -117,6 +117,10 @@ class Phase1Hover(gym.Env):
             
         self.main_engine_power = main_engine_power
         
+        # --- FIX 1: RECORD THE SIDE ENGINE POWER ---
+        # We need to save this so visualizer.py knows when to draw the flames!
+        self.side_engine_power = side_engine_power
+        
         # --- THE FIX: SAVE VELOCITY BEFORE IMPACT ---
         vel = self.lander.linearVelocity
         self.pre_step_velocity = math.sqrt(vel.x**2 + vel.y**2)

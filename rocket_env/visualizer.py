@@ -14,6 +14,8 @@ class RocketVisualizer:
         self.current_flame_power = 0.0
         self.stars = []
         self.camera_y = 0.0  # Tracks camera altitude
+        # --- NEW: BUBBLE MEMORY BANK ---
+        self.side_particles = []
     
     def init_window(self):
         if self.screen is None:
@@ -202,45 +204,100 @@ class RocketVisualizer:
         pygame.draw.polygon(self.screen, BLACK, r_front_fin, 2)
 
     def _draw_exhaust(self):
+        # ==========================================
+        # 1. MAIN ENGINE EXHAUST (Orange Flames)
+        # ==========================================
         power = getattr(self.env, 'main_engine_power', 0.0)
         self.current_flame_power += (power - self.current_flame_power) * 0.2
-        if self.current_flame_power < 0.05: return
-
+        
         pos = self.env.lander.position
         angle = self.env.lander.angle
         
-        # Nozzle is at rocket position (0,0 local)
-        nozzle_x = pos.x 
-        nozzle_y = pos.y 
-
-        # Flicker
-        t = pygame.time.get_ticks() * 0.05
-        flicker = (math.sin(t) * 0.1) + (math.cos(t * 3) * 0.05)
-        
-        flame_len = (self.current_flame_power * 3.0) + flicker
-        flame_w = 0.5 * self.current_flame_power
-
         def to_screen(x, y):
             sx = (SCALE * x) + (VIEWPORT_W / 2)
             sy = VIEWPORT_H - (SCALE * (y - self.camera_y)) - 20
             return (int(sx), int(sy))
 
-        # Tip of flame
-        tip_x = nozzle_x - math.sin(angle) * flame_len
-        tip_y = nozzle_y - math.cos(angle) * flame_len
-        
-        # Base of flame
-        base_l_x = nozzle_x - math.cos(angle) * flame_w
-        base_l_y = nozzle_y + math.sin(angle) * flame_w
-        base_r_x = nozzle_x + math.cos(angle) * flame_w
-        base_r_y = nozzle_y - math.sin(angle) * flame_w
+        # Only draw main flame if power is high enough
+        if self.current_flame_power >= 0.05:
+            nozzle_x = pos.x 
+            nozzle_y = pos.y 
 
-        points = [
-            to_screen(base_l_x, base_l_y),
-            to_screen(base_r_x, base_r_y),
-            to_screen(tip_x, tip_y)
-        ]
-        pygame.draw.polygon(self.screen, (255, 100, 0), points)
+            t = pygame.time.get_ticks() * 0.05
+            flicker = (math.sin(t) * 0.1) + (math.cos(t * 3) * 0.05)
+            
+            flame_len = (self.current_flame_power * 3.0) + flicker
+            flame_w = 0.5 * self.current_flame_power
+
+            tip_x = nozzle_x - math.sin(angle) * flame_len
+            tip_y = nozzle_y - math.cos(angle) * flame_len
+            
+            base_l_x = nozzle_x - math.cos(angle) * flame_w
+            base_l_y = nozzle_y + math.sin(angle) * flame_w
+            base_r_x = nozzle_x + math.cos(angle) * flame_w
+            base_r_y = nozzle_y - math.sin(angle) * flame_w
+
+            points = [
+                to_screen(base_l_x, base_l_y),
+                to_screen(base_r_x, base_r_y),
+                to_screen(tip_x, tip_y)
+            ]
+            pygame.draw.polygon(self.screen, (255, 100, 0), points)
+
+        # ==========================================
+        # 2. SIDE THRUSTERS (Blue Bubbles)
+        # ==========================================
+        side_power = getattr(self.env, 'side_engine_power', 0.0)
+        
+        # 1. Spawn new bubbles if the AI is pushing the stick
+        if abs(side_power) > 0.05:
+            nozzle_local_y = ROCKET_HEIGHT / 2.0
+            direction = 1 if side_power > 0 else -1
+            
+            # Where on the rocket the bubble is born
+            start_x = pos.x - math.sin(angle) * nozzle_local_y + (math.cos(angle) * ROCKET_H_WIDTH * direction)
+            start_y = pos.y + math.cos(angle) * nozzle_local_y + (math.sin(angle) * ROCKET_H_WIDTH * direction)
+            
+            # Spawn 2 bubbles per frame for a nice thick trail
+            for _ in range(2):
+                # Give it a random burst speed pushing away from the rocket
+                speed = random.uniform(2.0, 6.0)
+                vel_x = math.cos(angle) * speed * direction
+                vel_y = math.sin(angle) * speed * direction
+                
+                # Add the new bubble to our memory bank. 
+                # "life" starts at 1.0 (100%) and will drop to 0.
+                self.side_particles.append({
+                    "x": start_x,
+                    "y": start_y,
+                    "vx": vel_x,
+                    "vy": vel_y,
+                    "life": 1.0
+                })
+
+        # 2. Update and draw all existing bubbles
+        living_particles = []
+        for p in self.side_particles:
+            # Move the bubble through space
+            p["x"] += p["vx"] * (1.0 / FPS)
+            p["y"] += p["vy"] * (1.0 / FPS)
+            
+            # Age the bubble (loses 5% of its life every frame)
+            p["life"] -= 0.05 
+            
+            # If it is still alive, draw it!
+            if p["life"] > 0:
+                living_particles.append(p) # Save it for the next frame
+                
+                # The radius shrinks as the bubble gets older
+                radius = int(4 * p["life"])
+                if radius > 0:
+                    screen_pos = to_screen(p["x"], p["y"])
+                    # Draw a solid Cyan (0, 255, 255) circle
+                    pygame.draw.circle(self.screen, (0, 255, 255), screen_pos, radius)
+                    
+        # Update our memory bank to only keep the ones that haven't popped yet
+        self.side_particles = living_particles
 
     def _draw_hud(self):
         vel = self.env.lander.linearVelocity
