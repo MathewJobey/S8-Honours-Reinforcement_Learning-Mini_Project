@@ -13,7 +13,7 @@ model = PPO("MlpPolicy", env, verbose=1)
 # 3. Train the AI
 print("Starting training... Please wait.")
 # The AI will take 100,000 practice actions
-model.learn(total_timesteps=200000)
+model.learn(total_timesteps=500000)
 
 # 4. Save the trained brain
 # This saves a file named "ppo_phase1_hover.zip" in your folder

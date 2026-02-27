@@ -229,13 +229,16 @@ class RocketVisualizer:
             flame_len = (self.current_flame_power * 3.0) + flicker
             flame_w = 0.5 * self.current_flame_power
 
-            tip_x = nozzle_x - math.sin(angle) * flame_len
+            # Tip of the flame (pointing down away from rocket)
+            tip_x = nozzle_x + math.sin(angle) * flame_len
             tip_y = nozzle_y - math.cos(angle) * flame_len
             
+            # Left and Right Base points
             base_l_x = nozzle_x - math.cos(angle) * flame_w
-            base_l_y = nozzle_y + math.sin(angle) * flame_w
+            base_l_y = nozzle_y - math.sin(angle) * flame_w
+            
             base_r_x = nozzle_x + math.cos(angle) * flame_w
-            base_r_y = nozzle_y - math.sin(angle) * flame_w
+            base_r_y = nozzle_y + math.sin(angle) * flame_w
 
             points = [
                 to_screen(base_l_x, base_l_y),

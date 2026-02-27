@@ -51,19 +51,24 @@ class Phase1Hover(gym.Env):
 
         # --- PHASE 1 HOVER SETUP ---
         
-        start_y = 80.0 
+        start_y = 250.0 
         
-        # --- NEW: RANDOM HORIZONTAL SPAWN ---
-        # The pad is at 0. We will spawn it randomly between 15 meters left and 15 meters right.
-        start_x = self.np_random.uniform(-15.0, 15.0)
+        # 1. INCREASED RANDOM HORIZONTAL SPAWN
+        # Expanded from 15 to 30 meters left/right. 
+        start_x = self.np_random.uniform(-30.0, 30.0)
         
         self.lander.position = (start_x, start_y)
         
         # EXACTLY 0 Degrees (Upright)
         self.lander.angle = 0.0 
         
-        # Start stationary (0 horizontal, -40 vertical velocity)
-        self.lander.linearVelocity = (0, -40)
+        # 2. RANDOMIZED TERMINAL VELOCITY
+        # Simulates dropping from a massive height. 
+        # The AI must read its speed and react dynamically!
+        start_vy = self.np_random.uniform(-90.0, -60.0)
+        
+        # Start stationary horizontally, but falling at random terminal velocity
+        self.lander.linearVelocity = (0, start_vy)
 
         return self.step(np.array([0, 0]))[0], {}
     
