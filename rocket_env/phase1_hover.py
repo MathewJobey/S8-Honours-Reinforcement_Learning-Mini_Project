@@ -50,14 +50,20 @@ class Phase1Hover(gym.Env):
         self._create_rocket()
 
         # --- PHASE 1 HOVER SETUP ---
+        
         start_y = 80.0 
-        self.lander.position = (0, start_y)
+        
+        # --- NEW: RANDOM HORIZONTAL SPAWN ---
+        # The pad is at 0. We will spawn it randomly between 15 meters left and 15 meters right.
+        start_x = self.np_random.uniform(-15.0, 15.0)
+        
+        self.lander.position = (start_x, start_y)
         
         # EXACTLY 0 Degrees (Upright)
         self.lander.angle = 0.0 
         
-        # Start stationary (0 horizontal, 0 vertical velocity)
-        self.lander.linearVelocity = (0, -40) 
+        # Start stationary (0 horizontal, -40 vertical velocity)
+        self.lander.linearVelocity = (0, -40)
 
         return self.step(np.array([0, 0]))[0], {}
     
@@ -182,6 +188,14 @@ class Phase1Hover(gym.Env):
         reward += 0.1 * dist_reward
         reward += 0.1 * pose_reward
 
+        # --- NEW FIX 1: THE TIME TAX ---
+        # Bleed points every single frame. Hovering forever is no longer profitable.
+        reward -= 0.15
+
+        # --- NEW FIX 2: THE FUEL PENALTY ---
+        # Teach it to feather the throttle. Blasting 100% power wastes points!
+        reward -= main_engine_power * 0.05
+
         # 2. --- THE ANTI-MISSILE FIX ---
         # Bleed points every single frame it is moving fast. 
         # This forces it to slam the brakes immediately to survive!
@@ -193,9 +207,18 @@ class Phase1Hover(gym.Env):
         
         if self.game_over:
             terminated = True
+            
             # We judge the landing based on how fast it was going BEFORE the crash
             if self.pre_step_velocity < 3.0 and tilt_rad < 0.2: 
-                reward = 100 
+                
+                # --- NEW EXPONENTIAL BULLSEYE LOGIC ---
+                # Measure how far from the exact center (0) we are
+                distance_from_center = abs(pos.x)
+                
+                # Calculate the exponential reward
+                bullseye_bonus = 100.0 * math.exp(-distance_from_center)
+                
+                reward = bullseye_bonus 
                 self.landing_status = "LANDED"
             else:
                 # Dynamic Crash Penalty using the true impact speed
