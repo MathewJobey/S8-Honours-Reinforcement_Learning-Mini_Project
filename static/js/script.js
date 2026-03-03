@@ -37,7 +37,7 @@ document.getElementById('launchBtn').addEventListener('click', function() {
         document.getElementById('video-screen').src = '/video_feed?' + Date.now();
         setTimeout(() => {
             btn.classList.remove('busy');
-            btn.textContent = '⬆ INITIATE DROP';
+            btn.textContent = 'INITIATE DROP';
             document.getElementById('statusText').innerText = 'STANDBY';
             const dot = document.getElementById('statusDot');
             dot.style.background = '';
