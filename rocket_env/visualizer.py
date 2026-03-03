@@ -204,102 +204,84 @@ class RocketVisualizer:
         pygame.draw.polygon(self.screen, BLACK, r_front_fin, 2)
 
     def _draw_exhaust(self):
-        # ==========================================
-        # 1. MAIN ENGINE EXHAUST (Orange Flames)
-        # ==========================================
         power = getattr(self.env, 'main_engine_power', 0.0)
         self.current_flame_power += (power - self.current_flame_power) * 0.2
         
         pos = self.env.lander.position
         angle = self.env.lander.angle
         
+        # Helper: Local coordinate math for perfect centering
+        def transform_point(local_x, local_y):
+            rot_x = local_x * math.cos(angle) - local_y * math.sin(angle)
+            rot_y = local_x * math.sin(angle) + local_y * math.cos(angle)
+            screen_x = (SCALE * (pos.x + rot_x)) + (VIEWPORT_W / 2)
+            screen_y = VIEWPORT_H - (SCALE * (pos.y + rot_y - self.camera_y)) - 20
+            return (int(screen_x), int(screen_y))
+
         def to_screen(x, y):
             sx = (SCALE * x) + (VIEWPORT_W / 2)
             sy = VIEWPORT_H - (SCALE * (y - self.camera_y)) - 20
             return (int(sx), int(sy))
 
-        # Only draw main flame if power is high enough
+        # ==========================================
+        # 1. MAIN ENGINE EXHAUST (Orange Flames)
+        # ==========================================
         if self.current_flame_power >= 0.05:
-            nozzle_x = pos.x 
-            nozzle_y = pos.y 
-
             t = pygame.time.get_ticks() * 0.05
             flicker = (math.sin(t) * 0.1) + (math.cos(t * 3) * 0.05)
             
             flame_len = (self.current_flame_power * 3.0) + flicker
             flame_w = 0.5 * self.current_flame_power
 
-            # Tip of the flame (pointing down away from rocket)
-            tip_x = nozzle_x + math.sin(angle) * flame_len
-            tip_y = nozzle_y - math.cos(angle) * flame_len
-            
-            # Left and Right Base points
-            base_l_x = nozzle_x - math.cos(angle) * flame_w
-            base_l_y = nozzle_y - math.sin(angle) * flame_w
-            
-            base_r_x = nozzle_x + math.cos(angle) * flame_w
-            base_r_y = nozzle_y + math.sin(angle) * flame_w
-
+            # Using Local Coordinates perfectly centers the flame base
             points = [
-                to_screen(base_l_x, base_l_y),
-                to_screen(base_r_x, base_r_y),
-                to_screen(tip_x, tip_y)
+                transform_point(-flame_w, 0),  
+                transform_point(flame_w, 0),   
+                transform_point(0, -flame_len) 
             ]
             pygame.draw.polygon(self.screen, (255, 100, 0), points)
 
         # ==========================================
-        # 2. SIDE THRUSTERS (Blue Bubbles)
+        # 2. SIDE THRUSTERS (Blue & Purple Bubbles)
         # ==========================================
-        side_power = getattr(self.env, 'side_engine_power', 0.0)
+        center_power = getattr(self.env, 'center_side_power', 0.0)
+        nose_power = getattr(self.env, 'nose_side_power', 0.0)
         
-        # 1. Spawn new bubbles if the AI is pushing the stick
-        if abs(side_power) > 0.05:
-            nozzle_local_y = ROCKET_HEIGHT / 2.0
-            direction = 1 if side_power > 0 else -1
-            
-            # Where on the rocket the bubble is born
-            start_x = pos.x - math.sin(angle) * nozzle_local_y + (math.cos(angle) * ROCKET_H_WIDTH * direction)
-            start_y = pos.y + math.cos(angle) * nozzle_local_y + (math.sin(angle) * ROCKET_H_WIDTH * direction)
-            
-            # Spawn 2 bubbles per frame for a nice thick trail
-            for _ in range(2):
-                # Give it a random burst speed pushing away from the rocket
-                speed = random.uniform(2.0, 6.0)
-                vel_x = math.cos(angle) * speed * direction
-                vel_y = math.sin(angle) * speed * direction
+        # Helper to spawn bubbles. We added a 'color' variable!
+        def spawn_bubbles(power_val, local_y, color):
+            if abs(power_val) > 0.05:
+                direction = 1 if power_val > 0 else -1
+                start_x = pos.x - math.sin(angle) * local_y + (math.cos(angle) * ROCKET_H_WIDTH * direction)
+                start_y = pos.y + math.cos(angle) * local_y + (math.sin(angle) * ROCKET_H_WIDTH * direction)
                 
-                # Add the new bubble to our memory bank. 
-                # "life" starts at 1.0 (100%) and will drop to 0.
-                self.side_particles.append({
-                    "x": start_x,
-                    "y": start_y,
-                    "vx": vel_x,
-                    "vy": vel_y,
-                    "life": 1.0
-                })
+                for _ in range(2):
+                    speed = random.uniform(2.0, 6.0)
+                    self.side_particles.append({
+                        "x": start_x, "y": start_y,
+                        "vx": math.cos(angle) * speed * direction,
+                        "vy": math.sin(angle) * speed * direction,
+                        "life": 1.0,
+                        "color": color # Save the assigned color
+                    })
 
-        # 2. Update and draw all existing bubbles
+        # Spawn Center bubbles (Cyan) and Nose bubbles (Purple)
+        spawn_bubbles(center_power, ROCKET_HEIGHT / 2.0, (0, 255, 255))
+        spawn_bubbles(nose_power, ROCKET_HEIGHT * 0.85, (176, 0, 255))
+
+        # Update and draw all bubbles
         living_particles = []
         for p in self.side_particles:
-            # Move the bubble through space
             p["x"] += p["vx"] * (1.0 / FPS)
             p["y"] += p["vy"] * (1.0 / FPS)
-            
-            # Age the bubble (loses 5% of its life every frame)
             p["life"] -= 0.05 
             
-            # If it is still alive, draw it!
             if p["life"] > 0:
-                living_particles.append(p) # Save it for the next frame
-                
-                # The radius shrinks as the bubble gets older
+                living_particles.append(p) 
                 radius = int(4 * p["life"])
                 if radius > 0:
-                    screen_pos = to_screen(p["x"], p["y"])
-                    # Draw a solid Cyan (0, 255, 255) circle
-                    pygame.draw.circle(self.screen, (0, 255, 255), screen_pos, radius)
+                    # Draw the circle using its assigned color!
+                    pygame.draw.circle(self.screen, p["color"], to_screen(p["x"], p["y"]), radius)
                     
-        # Update our memory bank to only keep the ones that haven't popped yet
         self.side_particles = living_particles
 
     def _draw_hud(self):

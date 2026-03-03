@@ -25,9 +25,10 @@ class Phase2Descent(gym.Env):
             low=-np.inf, high=np.inf, shape=(7,), dtype=np.float32
         )
         
+        # Expand action space to 3 variables: [Main, Center, Nose]
         self.action_space = spaces.Box(
-            low=np.array([-1.0, -1.0]), 
-            high=np.array([1.0, 1.0]), 
+            low=np.array([-1.0, -1.0, -1.0]), 
+            high=np.array([1.0, 1.0, 1.0]), 
             dtype=np.float32
         )
         
@@ -49,30 +50,19 @@ class Phase2Descent(gym.Env):
         self._create_terrain()
         self._create_rocket()
 
-        # --- PHASE 1 HOVER SETUP ---
-        
-        start_y = 250.0 
-        
-        # 1. INCREASED RANDOM HORIZONTAL SPAWN
-        # Expanded from 15 to 30 meters left/right. 
+        start_y = 500.0 
         start_x = self.np_random.uniform(-30.0, 30.0)
+        # --- FIX 1: THE TILT TEST ---
+        # We spawn the rocket slightly tilted (between -15 and +15 degrees).
+        # This FORCES the AI to instantly fire the nose thrusters to straighten out!
+        self.lander.angle = self.np_random.uniform(-0.25, 0.25)
         
-        self.lander.position = (start_x, start_y)
-        
-        # EXACTLY 0 Degrees (Upright)
-        self.lander.angle = 0.0 
-        
-        # 2. RANDOMIZED TERMINAL VELOCITY
-        # Simulates dropping from a massive height. 
-        # The AI must read its speed and react dynamically!
         start_vy = self.np_random.uniform(-90.0, -60.0)
-        
-        # Start stationary horizontally, but falling at random terminal velocity
         self.lander.linearVelocity = (0, start_vy)
 
-        return self.step(np.array([0, 0]))[0], {}
+        return self.step(np.array([0, 0, 0]))[0], {}
     
-    def _apply_forces(self, main_power, side_power):
+    def _apply_forces(self, main_power, center_power, nose_power):
         angle = self.lander.angle
         vel = self.lander.linearVelocity
         
@@ -81,20 +71,31 @@ class Phase2Descent(gym.Env):
         main_force_y = float(math.cos(angle) * main_power * MAIN_ENGINE_POWER)
         self.lander.ApplyForceToCenter((main_force_x, main_force_y), wake=True)
         
-        # 2. Side Thrusters (Steering)
-        side_force = float(side_power * SIDE_ENGINE_POWER)
-        impulse_x = float(-side_force * math.cos(angle))
-        impulse_y = float(-side_force * math.sin(angle))
+        # 2. Center Thrusters (Pure Translation/Sliding)
+        center_force = float(center_power * SIDE_ENGINE_POWER)
+        c_impulse_x = float(-center_force * math.cos(angle))
+        c_impulse_y = float(-center_force * math.sin(angle))
         self.lander.ApplyLinearImpulse(
-            (impulse_x, impulse_y), 
-            self.lander.GetWorldPoint(localPoint=(0, ROCKET_HEIGHT/2)), 
+            (c_impulse_x, c_impulse_y), 
+            self.lander.GetWorldPoint(localPoint=(0, ROCKET_HEIGHT / 2.0)), 
+            wake=True
+        )
+
+        # 3. Nose Thrusters (Torque/Tilting)
+        # Removed the 0.5 handicap. Full power so it can snap the rocket upright!
+        nose_force = float(nose_power * SIDE_ENGINE_POWER)
+        n_impulse_x = float(-nose_force * math.cos(angle))
+        n_impulse_y = float(-nose_force * math.sin(angle))
+        self.lander.ApplyLinearImpulse(
+            (n_impulse_x, n_impulse_y), 
+            self.lander.GetWorldPoint(localPoint=(0, ROCKET_HEIGHT * 0.85)), 
             wake=True
         )
         
         self.current_drag = 0.0
         self.current_torque = 0.0
 
-        # 3. AERODYNAMIC DRAG
+        # 4. AERODYNAMIC DRAG
         exposed_area = abs(math.sin(angle)) * 0.9 + 0.1 
         velocity_squared = vel.x**2 + vel.y**2
         if velocity_squared > 0:
@@ -114,29 +115,33 @@ class Phase2Descent(gym.Env):
     def step(self, action):
         action = np.clip(action, -1, 1) 
         main_engine_power = np.clip(action[0], 0.0, 1.0)
-        side_engine_power = np.clip(action[1], -1.0, 1.0)
+        center_side_power = np.clip(action[1], -1.0, 1.0)
+        nose_side_power = np.clip(action[2], -1.0, 1.0)
         
         if self.fuel_left <= 0:
             main_engine_power = 0
-            side_engine_power = 0
+            center_side_power = 0
+            nose_side_power = 0
             
         self.main_engine_power = main_engine_power
+        self.center_side_power = center_side_power
+        self.nose_side_power = nose_side_power
         
-        # --- FIX 1: RECORD THE SIDE ENGINE POWER ---
-        # We need to save this so visualizer.py knows when to draw the flames!
-        self.side_engine_power = side_engine_power
-        
-        # --- THE FIX: SAVE VELOCITY BEFORE IMPACT ---
         vel = self.lander.linearVelocity
         self.pre_step_velocity = math.sqrt(vel.x**2 + vel.y**2)
         
-        # Apply Physics
-        self._apply_forces(main_engine_power, side_engine_power)
-
+        self._apply_forces(main_engine_power, center_side_power, nose_side_power)
         self.world.Step(1.0 / FPS, 6, 2)
 
+        # --- FIX 2: STEERING FUEL COST ---
+        # If steering is completely free, the AI will jitter. 
+        # Adding a tiny fuel cost forces it to fly cleanly and efficiently.
         if main_engine_power > 0:
-            self.fuel_left -= FUEL_CONSUMPTION_RATE / FPS * main_engine_power
+            self.fuel_left -= (FUEL_CONSUMPTION_RATE / FPS) * main_engine_power
+        if abs(center_side_power) > 0:
+            self.fuel_left -= (FUEL_CONSUMPTION_RATE / FPS) * abs(center_side_power) * 0.1
+        if abs(nose_side_power) > 0:
+            self.fuel_left -= (FUEL_CONSUMPTION_RATE / FPS) * abs(nose_side_power) * 0.05
 
         state = self._get_state()
         reward, terminated, truncated = self._compute_reward(state, main_engine_power)
@@ -180,12 +185,14 @@ class Phase2Descent(gym.Env):
         vel = self.lander.linearVelocity
         
         x_range = VIEWPORT_W / SCALE / 2
-        
-        # --- FIX 1: EXPAND THE RADAR ---
-        y_range = 600.0 
+        y_range = 500.0 
         
         dist_x = abs(pos.x)
-        dist_y = abs(pos.y - PAD_HEIGHT_METERS)
+        
+        # --- FIX 3: THE PERFECT HOVER RADAR ---
+        # Instead of targeting the pad (1.0m), it targets 0.3m ABOVE the pad (1.3m).
+        hover_target_y = PAD_HEIGHT_METERS + 0.3
+        dist_y = abs(pos.y - hover_target_y)
         
         dist_norm = (dist_x / x_range) + (dist_y / y_range)
         dist_reward = 1.0 - min(1.0, dist_norm)
@@ -193,55 +200,46 @@ class Phase2Descent(gym.Env):
         tilt_rad = abs(self.lander.angle)
         pose_reward = 1.0 - min(1.0, tilt_rad / 1.5)
         
-       # 1. Base Rewards: Points for getting closer and staying upright
         reward += 0.1 * dist_reward
         reward += 0.1 * pose_reward
-
-        # The Time Tax & Fuel Penalty
         reward -= 0.15
         reward -= main_engine_power * 0.05
+        # --- THE FIX: STRICT ALIGNMENT PENALTY ---
+        # 1. Bleed points for every degree it leans away from perfect 0.
+        reward -= (tilt_rad * 2.0) 
+        # 2. Bleed points if it is spinning or wobbling.
+        reward -= (abs(self.lander.angularVelocity) * 0.5)
 
-        # 2. --- NEW: DYNAMIC RADAR SPEED LIMIT (GLIDE SLOPE) ---
-        # The allowed speed shrinks as the rocket gets closer to the ground (pos.y).
-        allowed_speed = max(2.0, pos.y * 0.5)
-        current_speed = abs(vel.y)
-        
-        if current_speed > allowed_speed:
-            # Penalize it heavily for breaking the altitude speed limit
-            speed_violation = current_speed - allowed_speed
-            reward -= (speed_violation / 10.0)
+        # Directional Radar (Anti-Reversing)
+        if vel.y > 0.5:
+            reward -= vel.y * 1.0 
+        else:
+            allowed_speed = max(2.0, pos.y * 0.5)
+            current_fall_speed = abs(vel.y)
+            if current_fall_speed > allowed_speed:
+                speed_violation = current_fall_speed - allowed_speed
+                reward -= (speed_violation / 10.0)
 
-        # 3. --- NEW: THE "TARGET ZONE" HOVER BONUS ---
-        # If it is below 5 meters, centered over the pad, and moving very slowly... make it rich!
-        if pos.y < 5.0 and abs(pos.x) < 2.0 and current_speed < 1.0 and tilt_rad < 0.2:
-            reward += 1.0
+        # --- FIX 4: STRICT HOVER BONUS ---
+        # It ONLY gets rich if it is between 0.1m and 0.5m above the pad, 
+        # nearly centered, incredibly slow, and perfectly straight.
+        if (PAD_HEIGHT_METERS + 0.1) < pos.y < (PAD_HEIGHT_METERS + 0.5):
+            if abs(pos.x) < 0.5 and abs(vel.y) < 0.5 and tilt_rad < 0.1:
+                reward += 5.0 # Massive reward for hovering here!
 
-        # 3. --- TERMINAL STATES (NO LEGS) ---
         velocity_total = math.sqrt(vel.x**2 + vel.y**2)
         
         if self.game_over:
             terminated = True
-            
-            # We judge the landing based on how fast it was going BEFORE the crash
             if self.pre_step_velocity < 3.0 and tilt_rad < 0.2: 
-                
-                # --- NEW EXPONENTIAL BULLSEYE LOGIC ---
-                # Measure how far from the exact center (0) we are
                 distance_from_center = abs(pos.x)
-                
-                # Calculate the exponential reward
-                bullseye_bonus = 100.0 * math.exp(-distance_from_center)
-                
-                reward = bullseye_bonus 
+                reward = 100.0 * math.exp(-distance_from_center)
                 self.landing_status = "LANDED"
             else:
-                # Dynamic Crash Penalty using the true impact speed
-                crash_damage = self.pre_step_velocity * 2.0
-                reward = -100 - crash_damage
-                
+                reward = -100 - (self.pre_step_velocity * 2.0)
                 self.landing_status = "CRASH"
                 
-        elif abs(pos.x) >= x_range:
+        elif abs(pos.x) >= x_range or pos.y > 1200.0:
             terminated = True
             reward = -100
             self.landing_status = "CRASH"
@@ -258,10 +256,6 @@ class Phase2Descent(gym.Env):
     def _destroy(self):
         if not self.world: return
         self.world = None
-
-    def _generate_wind(self):
-        self.wind_x = self.np_random.uniform(-WIND_POWER_MAX, WIND_POWER_MAX)
-        self.wind_y = self.np_random.uniform(-WIND_POWER_MAX, WIND_POWER_MAX)
         
     def _create_terrain(self):
         self.ground = self.world.CreateStaticBody(
@@ -280,7 +274,7 @@ class Phase2Descent(gym.Env):
 
     def _create_rocket(self):
         initial_x = 0
-        initial_y = 0 
+        initial_y = 500.0
         
         # 1. Main Body ONLY (No Legs)
         self.lander = self.world.CreateDynamicBody(
