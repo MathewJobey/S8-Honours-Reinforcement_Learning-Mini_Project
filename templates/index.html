@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dropship AI Landing</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+
+        <header>
+            <div>
+                <div class="wordmark">DROP<span>SHIP</span></div>
+                <div class="sub">Interactive Landing Telemetry</div>
+            </div>
+            <div class="badge">
+                <span class="dot live" id="statusDot"></span>
+                <span id="statusText">STANDBY</span>
+            </div>
+        </header>
+
+        <section class="controls">
+            <div class="controls-grid">
+
+                <div class="control-group">
+                    <label>
+                        Altitude
+                        <span><span class="val" id="valAltitude">100</span><span class="unit">m</span></span>
+                    </label>
+                    <div class="slider-wrap">
+                        <input type="range" class="filled" id="sliderAltitude"
+                               min="100" max="1000" value="100"
+                               oninput="syncSlider(this, 'valAltitude')">
+                        <div class="ticks"><span class="tick">100</span><span class="tick">550</span><span class="tick">1000</span></div>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>
+                        Drop Speed
+                        <span><span class="val" id="valSpeed">50</span><span class="unit">m/s</span></span>
+                    </label>
+                    <div class="slider-wrap">
+                        <input type="range" class="filled" id="sliderSpeed"
+                               min="0" max="130" value="50"
+                               oninput="syncSlider(this, 'valSpeed')">
+                        <div class="ticks"><span class="tick">0</span><span class="tick">65</span><span class="tick">130</span></div>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>
+                        Spawn Offset
+                        <span><span class="val" id="valXPos">0</span><span class="unit">m</span></span>
+                    </label>
+                    <div class="slider-wrap">
+                        <input type="range" class="filled" id="sliderXPos"
+                               min="-30" max="30" value="0"
+                               oninput="syncSlider(this, 'valXPos')">
+                        <div class="ticks"><span class="tick">−30</span><span class="tick">0</span><span class="tick">+30</span></div>
+                    </div>
+                </div>
+
+            </div>
+
+            <button class="launch-btn" id="launchBtn">INITIATE DROP</button>
+        </section>
+
+        <section class="video-wrap">
+            <img id="video-screen" src="/video_feed" width="700" height="750" alt="Simulation feed">
+        </section>
+
+    </div>
+
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>
