@@ -55,7 +55,7 @@ class Phase2Descent(gym.Env):
         # --- FIX 1: THE TILT TEST ---
         # We spawn the rocket slightly tilted (between -15 and +15 degrees).
         # This FORCES the AI to instantly fire the nose thrusters to straighten out!
-        self.lander.angle = self.np_random.uniform(-0.25, 0.25)
+        self.lander.angle = self.np_random.uniform(-math.pi, math.pi)
         
         start_vy = self.np_random.uniform(-90.0, -60.0)
         self.lander.linearVelocity = (0, start_vy)
@@ -134,17 +134,21 @@ class Phase2Descent(gym.Env):
         self.world.Step(1.0 / FPS, 6, 2)
 
         # --- FIX 2: STEERING FUEL COST ---
-        # If steering is completely free, the AI will jitter. 
-        # Adding a tiny fuel cost forces it to fly cleanly and efficiently.
         if main_engine_power > 0:
             self.fuel_left -= (FUEL_CONSUMPTION_RATE / FPS) * main_engine_power
+            
+        # Increased from 0.1 to 0.5 so it drains 50% as fast as the main engine
         if abs(center_side_power) > 0:
-            self.fuel_left -= (FUEL_CONSUMPTION_RATE / FPS) * abs(center_side_power) * 0.1
+            self.fuel_left -= (FUEL_CONSUMPTION_RATE / FPS) * abs(center_side_power) * 0.5
+            
+        # Increased from 0.05 to 1.0! The nose is a heavy thruster, it drains gas fast!
         if abs(nose_side_power) > 0:
-            self.fuel_left -= (FUEL_CONSUMPTION_RATE / FPS) * abs(nose_side_power) * 0.05
+            self.fuel_left -= (FUEL_CONSUMPTION_RATE / FPS) * abs(nose_side_power) * 1.0
 
         state = self._get_state()
-        reward, terminated, truncated = self._compute_reward(state, main_engine_power)
+        
+        # --- FIX: Removed parameter to let the function read directly from memory ---
+        reward, terminated, truncated = self._compute_reward(state)
 
         return np.array(state, dtype=np.float32), reward, terminated, truncated, {}
     
@@ -152,31 +156,26 @@ class Phase2Descent(gym.Env):
         pos = self.lander.position
         vel = self.lander.linearVelocity
         
-        # 1. SCALE CONSTANTS
-        # Viewport width in meters: 800 / 10 = 80m. Half = 40m.
         world_width_half = VIEWPORT_W / SCALE / 2 
-        
-        # Max Altitude: We spawn at 350m, so let's normalize against 400m.
-        # This gives a value like 0.875, which is perfect for Neural Networks (0 to 1).
         MAX_ALTITUDE = 600.0
+        
+        # --- THE FIX 1: WRAP THE ANGLE ---
+        # This math forces the angle to always stay between -3.14 and +3.14
+        norm_angle = (self.lander.angle + math.pi) % (2 * math.pi) - math.pi
         
         return [
             pos.x / world_width_half,       # 1. Horizontal Position (-1 to 1)
             pos.y / MAX_ALTITUDE,           # 2. Vertical Position (0 to 1)
             
-            vel.x / 50.0,                   # 3. Horizontal Velocity (Normalized by approx max speed)
+            vel.x / 50.0,                   # 3. Horizontal Velocity 
             vel.y / 50.0,                   # 4. Vertical Velocity
             
-            self.lander.angle,              # 5. Angle
+            norm_angle,                     # 5. Angle (Fixed!)
             self.lander.angularVelocity,    # 6. Angular Velocity
             
             self.fuel_left / INITIAL_FUEL   # 7. Fuel
-            
-            # REMOVED: Legs (No longer exist)
-            # REMOVED: Wind (Disabled)
         ]
-    
-    def _compute_reward(self, state, main_engine_power):
+    def _compute_reward(self, state):
         reward = 0
         terminated = False 
         truncated = False
@@ -189,28 +188,39 @@ class Phase2Descent(gym.Env):
         
         dist_x = abs(pos.x)
         
-        # --- FIX 3: THE PERFECT HOVER RADAR ---
-        # Instead of targeting the pad (1.0m), it targets 0.3m ABOVE the pad (1.3m).
+        # 1. THE HOVER RADAR
         hover_target_y = PAD_HEIGHT_METERS + 0.3
         dist_y = abs(pos.y - hover_target_y)
         
         dist_norm = (dist_x / x_range) + (dist_y / y_range)
         dist_reward = 1.0 - min(1.0, dist_norm)
         
-        tilt_rad = abs(self.lander.angle)
-        pose_reward = 1.0 - min(1.0, tilt_rad / 1.5)
+        norm_angle = (self.lander.angle + math.pi) % (2 * math.pi) - math.pi
+        tilt_rad = abs(norm_angle)
         
-        reward += 0.1 * dist_reward
-        reward += 0.1 * pose_reward
-        reward -= 0.15
-        reward -= main_engine_power * 0.05
-        # --- THE FIX: STRICT ALIGNMENT PENALTY ---
-        # 1. Bleed points for every degree it leans away from perfect 0.
-        reward -= (tilt_rad * 2.0) 
-        # 2. Bleed points if it is spinning or wobbling.
+        # 2. BASE REWARDS & TAXES
+        # Increased from 0.5 to 2.0. The AI now makes a massive profit just by hovering!
+        reward += 2.0 * dist_reward 
+        
+        # REMOVED THE TIME TAX entirely. It should want to stay in the air forever!
+        
+        # Lowered all fuel taxes so the AI isn't afraid to fire the engines
+        reward -= self.main_engine_power * 0.02
+        reward -= abs(self.center_side_power) * 0.005
+        reward -= abs(self.nose_side_power) * 0.01
+        
+        reward -= (abs(vel.x) * 0.1) 
+
+        # 3. UNIVERSAL AUTO-ALIGNMENT LOGIC
+        angle_penalty = (tilt_rad ** 2) * 2.0 
+        reward -= angle_penalty
+        
+        if tilt_rad < 0.05:
+            reward += 2.0 
+
         reward -= (abs(self.lander.angularVelocity) * 0.5)
 
-        # Directional Radar (Anti-Reversing)
+        # 4. GLIDE SLOPE (Anti-Reversing)
         if vel.y > 0.5:
             reward -= vel.y * 1.0 
         else:
@@ -220,28 +230,34 @@ class Phase2Descent(gym.Env):
                 speed_violation = current_fall_speed - allowed_speed
                 reward -= (speed_violation / 10.0)
 
-        # --- FIX 4: STRICT HOVER BONUS ---
-        # It ONLY gets rich if it is between 0.1m and 0.5m above the pad, 
-        # nearly centered, incredibly slow, and perfectly straight.
+        # 5. STRICT HOVER BONUS
         if (PAD_HEIGHT_METERS + 0.1) < pos.y < (PAD_HEIGHT_METERS + 0.5):
             if abs(pos.x) < 0.5 and abs(vel.y) < 0.5 and tilt_rad < 0.1:
-                reward += 5.0 # Massive reward for hovering here!
+                reward += 5.0 
 
-        velocity_total = math.sqrt(vel.x**2 + vel.y**2)
-        
+        # 6. TERMINAL STATES
         if self.game_over:
             terminated = True
-            if self.pre_step_velocity < 3.0 and tilt_rad < 0.2: 
+            
+            if self.pre_step_velocity < 1.0 and tilt_rad < 0.05: 
                 distance_from_center = abs(pos.x)
-                reward = 100.0 * math.exp(-distance_from_center)
+                
+                # THE JACKPOT: Increased from 100 to 1000!
+                landing_reward = 1000.0 * math.exp(-distance_from_center)
+                
+                # THE PERFECT ANGLE BONUS: Increased from 50 to 500!
+                angle_bonus = 500.0 * math.exp(-tilt_rad * 50.0) 
+                
+                landing_reward += angle_bonus
+                reward = landing_reward
                 self.landing_status = "LANDED"
             else:
-                reward = -100 - (self.pre_step_velocity * 2.0)
+                reward = -200 - (self.pre_step_velocity * 2.0)
                 self.landing_status = "CRASH"
                 
         elif abs(pos.x) >= x_range or pos.y > 1200.0:
             terminated = True
-            reward = -100
+            reward = -200
             self.landing_status = "CRASH"
         
         return reward, terminated, truncated
@@ -274,7 +290,7 @@ class Phase2Descent(gym.Env):
 
     def _create_rocket(self):
         initial_x = 0
-        initial_y = 500.0
+        initial_y = 1000.0
         
         # 1. Main Body ONLY (No Legs)
         self.lander = self.world.CreateDynamicBody(
