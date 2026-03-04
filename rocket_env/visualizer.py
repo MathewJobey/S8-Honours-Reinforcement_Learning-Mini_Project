@@ -95,8 +95,9 @@ class RocketVisualizer:
         pygame.draw.circle(self.screen, light_color, (pad_screen_x + pad_w_px//2, pad_screen_y), 6)
 
         # --- 4. DRAW ROCKET & HUD ---
-        self._draw_rocket_details(self.env.lander)
+        # Draw exhaust FIRST so it sits behind the rocket body
         self._draw_exhaust()
+        self._draw_rocket_details(self.env.lander)
         self._draw_hud()
 
         # Display
@@ -248,25 +249,27 @@ class RocketVisualizer:
         nose_power = getattr(self.env, 'nose_side_power', 0.0)
         
         # Helper to spawn bubbles. We added a 'color' variable!
+        # Helper to spawn bubbles. 
         def spawn_bubbles(power_val, local_y, color):
-            if abs(power_val) > 0.05:
+            # LOWERED THRESHOLD: Show bubbles even if AI uses just 1% power!
+            if abs(power_val) > 0.01:
                 direction = 1 if power_val > 0 else -1
                 start_x = pos.x - math.sin(angle) * local_y + (math.cos(angle) * ROCKET_H_WIDTH * direction)
                 start_y = pos.y + math.cos(angle) * local_y + (math.sin(angle) * ROCKET_H_WIDTH * direction)
                 
-                for _ in range(2):
+                for _ in range(3): # Increased to 3 particles for better visibility
                     speed = random.uniform(2.0, 6.0)
                     self.side_particles.append({
                         "x": start_x, "y": start_y,
                         "vx": math.cos(angle) * speed * direction,
                         "vy": math.sin(angle) * speed * direction,
                         "life": 1.0,
-                        "color": color # Save the assigned color
+                        "color": color 
                     })
 
         # Spawn Center bubbles (Cyan) and Nose bubbles (Purple)
-        spawn_bubbles(center_power, ROCKET_HEIGHT / 2.0, (0, 255, 255))
-        spawn_bubbles(nose_power, ROCKET_HEIGHT * 0.85, (176, 0, 255))
+        spawn_bubbles(center_power, ROCKET_HEIGHT / 2.0, (0,255,236))
+        spawn_bubbles(nose_power, ROCKET_HEIGHT * 0.85, (255,0,206))
 
         # Update and draw all bubbles
         living_particles = []
@@ -291,6 +294,9 @@ class RocketVisualizer:
         # Safely get the values from the environment
         drag_val = getattr(self.env, 'current_drag', 0.0)
         torque_val = getattr(self.env, 'current_torque', 0.0)
+        # Safely get the exact joystick values from the AI
+        nose_val = getattr(self.env, 'nose_side_power', 0.0)
+        center_val = getattr(self.env, 'center_side_power', 0.0)
         
         # White Text for visibility against Sky
         texts = [
@@ -299,7 +305,10 @@ class RocketVisualizer:
             f"Y Vel: {abs(vel.y):.1f} m/s",
             f"Angle: {math.degrees(self.env.lander.angle):.1f}",
             f"Aero Drag: {drag_val:.1f} N",               
-            f"Flap Torque: {abs(torque_val):.1f} Nm"      
+            f"Flap Torque: {abs(torque_val):.1f} Nm",  
+            # Show the exact power output of the AI (from -1.0 to 1.0)
+            f"Nose Pwr: {nose_val:.2f}",               
+            f"Center Pwr: {center_val:.2f}"   
         ]
         
         for i, t in enumerate(texts):
