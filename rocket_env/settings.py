@@ -11,6 +11,7 @@ VIEWPORT_H = 750
 # Increased from 300.0 to 1000.0 to handle the larger mass.
 MAIN_ENGINE_POWER = 2000.0
 SIDE_ENGINE_POWER = 50.0   # Stronger cold-gas thrusters for the "flip"
+NOSE_ENGINE_POWER = 30.0    # New nose thruster for better control
 INITIAL_FUEL = 100.0
 FUEL_CONSUMPTION_RATE = 5.0
 
@@ -28,7 +29,6 @@ PAD_HEIGHT_METERS = 1.0
 # Terrain
 GRAVITY_X = 0.0
 GRAVITY_Y = -9.8  
-WIND_POWER_MAX = 0.0
 
 # Colors (R, G, B)
 LANDER_COLOR = (192, 192, 192)      # Stainless Steel Silver

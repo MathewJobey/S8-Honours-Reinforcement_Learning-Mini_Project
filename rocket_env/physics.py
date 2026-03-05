@@ -14,6 +14,7 @@ class ContactDetector(contactListener):
         # 2. If either of those tags says "rocket", trigger the game over!
         if tag_a == "rocket" or tag_b == "rocket":
             self.env.game_over = True 
+            #game over is checked and sent back to the main file
             
     def EndContact(self, contact):
         pass
