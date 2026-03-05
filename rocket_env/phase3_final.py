@@ -18,6 +18,8 @@ class Phase3Final(gym.Env):
         self.main_engine_power = 0.0
         self.landing_status = "IN_PROGRESS"
         self.visualizer = RocketVisualizer(self)
+        self.start_y = 500.0 # Set the default drop height, and create a ceiling that is 20% higher
+        self.max_altitude = self.start_y * 1.2
         
         # Contains 7 variables: [X Pos, Y Pos, X Vel, Y Vel, Angle, Angular Vel, Fuel]
         self.observation_space = spaces.Box(
@@ -50,7 +52,7 @@ class Phase3Final(gym.Env):
         self._create_terrain()
         self._create_rocket()
 
-        start_y = 500.0 
+        start_y = self.start_y
         start_x = self.np_random.uniform(-30.0, 30.0)
         self.lander.position = (start_x, start_y)
         self.lander.angle = self.np_random.uniform(-math.pi, math.pi)
@@ -148,6 +150,26 @@ class Phase3Final(gym.Env):
         reward, terminated, truncated = self._compute_reward(state)
         return np.array(state, dtype=np.float32), reward, terminated, truncated, {}
     
+    """NORMALIZATION OF THE OBSERVATION SPACE. THIS FUNCTION TAKES THE RAW PHYSICS DATA AND SCALES IT TO A RANGE THAT IS EASIER FOR THE AI TO LEARN FROM. THIS INCLUDES NORMALIZING POSITION, VELOCITY, ANGLE, AND FUEL LEVEL."""
+    def _get_state(self):
+        pos = self.lander.position
+        vel = self.lander.linearVelocity
+        
+        world_width_half = VIEWPORT_W / SCALE / 2 
+        
+        # --- THE FIX 1: WRAP THE ANGLE ---
+        # This math forces the angle to always stay between -3.14 and +3.14
+        norm_angle = (self.lander.angle + math.pi) % (2 * math.pi) - math.pi
+        
+        return [
+            pos.x / world_width_half,       # 1. Horizontal Position (-1 to 1)
+            pos.y / self.max_altitude,      # 2. Vertical Position (0 to 1)
+            vel.x / 150.0,                  # 3. Horizontal Velocity 
+            vel.y / 150.0,                  # 4. Vertical Velocity
+            norm_angle,                     # 5. Angle
+            self.lander.angularVelocity/6.0,# 6. Angular Velocity
+            self.fuel_left / INITIAL_FUEL   # 7. Fuel
+        ]
     
     def _create_rocket(self):
         initial_x = 0
