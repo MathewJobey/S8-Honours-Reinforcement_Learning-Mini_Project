@@ -291,24 +291,25 @@ class RocketVisualizer:
                     
         self.side_particles = living_particles
 
+    """HUD & FUEL BAR: The HUD displays critical flight information such as altitude, velocity, angle, and aerodynamic drag in a clear and concise manner. We also added a dynamic fuel bar in the top right corner that visually represents how much fuel is left, making it easier for both humans and AI to gauge their remaining resources at a glance. The fuel bar changes color from green to red as fuel depletes, providing an immediate visual cue about the urgency of refueling or landing safely before running out of fuel."""
     def _draw_hud(self):
         vel = self.env.lander.linearVelocity
         pos = self.env.lander.position
         
-        # Safely get the values from the environment
         drag_val = getattr(self.env, 'current_drag', 0.0)
-        # Safely get the exact joystick values from the AI
         nose_val = getattr(self.env, 'nose_side_power', 0.0)
         center_val = getattr(self.env, 'center_side_power', 0.0)
+        wrapped_angle = (self.env.lander.angle + math.pi) % (2 * math.pi) - math.pi
         
         # White Text for visibility against Sky
         texts = [
-            f"Altitude: {abs(pos.y):.1f} m",
-            f"X Vel: {abs(vel.x):.1f} m/s",
-            f"Y Vel: {abs(vel.y):.1f} m/s",
-            f"Angle: {math.degrees(self.env.lander.angle):.1f}",
+            f"Altitude: {pos.y:.1f} m",
+            # THE FIX 2: Removed abs() so we can see negative speeds (Left/Down)
+            f"X Vel: {vel.x:.1f} m/s",
+            f"Y Vel: {vel.y:.1f} m/s",
+            # Use the wrapped angle so it stays between -180 and +180 degrees
+            f"Angle: {math.degrees(wrapped_angle):.1f}",
             f"Aero Drag: {drag_val:.1f} N",               
-            # Show the exact power output of the AI (from -1.0 to 1.0)
             f"Nose Pwr: {nose_val:.2f}",               
             f"Center Pwr: {center_val:.2f}"   
         ]
@@ -318,33 +319,34 @@ class RocketVisualizer:
             self.screen.blit(label, (10, 10 + (i * 20)))
 
         # --- MOVED FUEL BAR LOGIC (TOP RIGHT) ---
-        # 1. Get the current fuel and calculate the percentage
         fuel_left = getattr(self.env, 'fuel_left', 0.0)
         fuel_ratio = max(0.0, min(1.0, fuel_left / INITIAL_FUEL))
         
-        # 2. Set the size of the bar
         bar_w = 150
         bar_h = 15
         
-        # Set the position to the Top Right
-        # Subtract the bar width and a 20-pixel margin from the screen width
         bar_x = VIEWPORT_W - bar_w - 20 
-        bar_y = 35 # Moved down to 35 to make room for the text above it
+        bar_y = 35 
 
-        # 3. Draw the "FUEL" Text Label
         fuel_label = self.font.render("FUEL", True, (255, 255, 255))
-        # Place the text aligned with the left edge of the bar, but up near the top (y=10)
         self.screen.blit(fuel_label, (bar_x, 10))
 
-        # 4. Draw the background (Empty / Red)
-        pygame.draw.rect(self.screen, (150, 0, 0), (bar_x, bar_y, bar_w, bar_h))
+        # Draw the background (Empty / Dark Red)
+        pygame.draw.rect(self.screen, (100, 0, 0), (bar_x, bar_y, bar_w, bar_h))
         
-        # 5. Draw the foreground (Full / Green)
+        # THE FIX 3: Dynamic Color Logic!
+        if fuel_ratio > 0.5:
+            current_bar_color = (0, 255, 0)       # Green if above 50%
+        elif fuel_ratio > 0.2:
+            current_bar_color = (255, 255, 0)     # Yellow if above 20%
+        else:
+            current_bar_color = (255, 0, 0)       # Bright Red if almost empty!
+
         fill_w = int(bar_w * fuel_ratio)
         if fill_w > 0:
-            pygame.draw.rect(self.screen, FUEL_BAR_COLOR_FULL, (bar_x, bar_y, fill_w, bar_h))
+            pygame.draw.rect(self.screen, current_bar_color, (bar_x, bar_y, fill_w, bar_h))
             
-        # 6. Draw the white outline border
+        # Draw the white outline border
         pygame.draw.rect(self.screen, FUEL_BAR_BORDER, (bar_x, bar_y, bar_w, bar_h), 2)
         
     def close(self):
