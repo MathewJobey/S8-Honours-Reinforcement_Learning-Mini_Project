@@ -36,31 +36,25 @@ class RocketVisualizer:
                 self.stars.append((x, y, radius))
             
     def render(self, mode="human"):
-        """Renders the world with stars, ground, and hazard pad."""
+        """Renders the world with stars, ground, and hazard pad PAINTERS ALGORITHM."""
         self.init_window()
-
+        
         # --- 1. CAMERA LOGIC ---
         # Keep rocket at ~40% of screen height
         rocket_y = self.env.lander.position.y
-        
-        # Calculate Target Camera Position
-        # We shift the camera up so the rocket is centered
-        target_cam_y = rocket_y - (VIEWPORT_H / SCALE * 0.4)
-        
-        # Clamp: Never let the camera go below 0 (underground).
-        self.camera_y = max(0.0, target_cam_y)
+        target_cam_y = rocket_y - (VIEWPORT_H / SCALE * 0.4)                                                             
+        self.camera_y = max(0.0, target_cam_y) # Clamp: Never let the camera go below 0 (underground).
         
         # Helper to convert World Y -> Screen Y
         def world_to_screen(x, y):
             sx = (SCALE * x) + (VIEWPORT_W / 2)
-            # CRITICAL: Subtract self.camera_y to move the world
             sy = VIEWPORT_H - (SCALE * (y - self.camera_y)) - 20
             return int(sx), int(sy)
         
         # --- 2. DRAWING BACKGROUND ---
         self.screen.fill(SKY_COLOR)
-
-        # Stars (Static parallax)
+        
+        # Stars (Static Wallpaper)
         for x, y, radius in self.stars:
             pygame.draw.circle(self.screen, (255, 255, 255), (x, y), radius)
 
@@ -72,14 +66,17 @@ class RocketVisualizer:
         pad_w_px = int(PAD_WIDTH_METERS * SCALE)
         pad_h_px = int(PAD_HEIGHT_METERS * SCALE)
         pad_screen_x, pad_screen_y = world_to_screen(0, PAD_HEIGHT_METERS)
-        
-        # Pad Rect with yellow and black stripes
         pad_rect = (pad_screen_x - pad_w_px//2, pad_screen_y, pad_w_px, pad_h_px)
+        self.screen.set_clip(pad_rect)
+
         stripe_width = 10
         for x in range(pad_screen_x - pad_w_px//2, pad_screen_x + pad_w_px//2, stripe_width * 2):
             pygame.draw.rect(self.screen, (255, 255, 0), (x, pad_screen_y, stripe_width, pad_h_px))
             pygame.draw.rect(self.screen, (0, 0, 0), (x + stripe_width, pad_screen_y, stripe_width, pad_h_px))
-        pygame.draw.rect(self.screen, (0, 0, 0), pad_rect, 2)  # Outline
+            
+        # THE FIX: Turn off the clipping mask so we can draw the rest of the game!
+        self.screen.set_clip(None)
+        pygame.draw.rect(self.screen, (0, 0, 0), pad_rect, 2)  # Draw the black Outline
 
         # Status Lights
         status = getattr(self.env, 'landing_status', "IN_PROGRESS")
@@ -117,9 +114,8 @@ class RocketVisualizer:
             rot_y = local_x * math.sin(angle) + local_y * math.cos(angle)
             
             screen_x = (SCALE * (pos.x + rot_x)) + (VIEWPORT_W / 2)
-            # Apply Camera Offset
             screen_y = VIEWPORT_H - (SCALE * (pos.y + rot_y - self.camera_y)) - 20
-            return (screen_x, screen_y)
+            return (int(screen_x), int(screen_y))
 
         # Colors & Dimensions
         WHITE = (245, 245, 245)
@@ -148,9 +144,7 @@ class RocketVisualizer:
         pygame.draw.polygon(self.screen, RED, nose_points)
         pygame.draw.polygon(self.screen, BLACK, nose_points, 2)
 
-        # ==========================================
-        # --- REAR FINS (BOTTOM FLAPS) ---
-        # ==========================================
+        # REAR FINS 
         fin_h = body_h * 0.3
         fin_w = half_w * 1.5
         fin_bottom = body_h * 0.1
@@ -173,13 +167,9 @@ class RocketVisualizer:
         pygame.draw.polygon(self.screen, (100,100,100), r_fin)
         pygame.draw.polygon(self.screen, BLACK, r_fin, 2)
 
-        # ==========================================
-        # --- NEW: FORWARD FLAPS (TOP FINS) ---
-        # ==========================================
-        # Make them slightly smaller than the rear flaps
+        # FORWARD FLAPS
         front_fin_h = body_h * 0.2  
         front_fin_w = half_w * 1.2
-        # Position them high up on the body, just before the nose
         front_fin_bottom = body_h * 0.75  
         
         # Left Forward Flap

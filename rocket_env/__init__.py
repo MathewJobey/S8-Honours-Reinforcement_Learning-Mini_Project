@@ -9,7 +9,14 @@ register(
 
 # 2. Your new Phase 1 training environment
 register(
-    id='Phase1Hover-v0',
-    entry_point='rocket_env.phase1_hover:Phase1Hover',
+    id='Phase2Descent-v0',
+    entry_point='rocket_env.phase2_descent:Phase2Descent',
+    max_episode_steps=2000, 
+)
+
+# 3. Your new Phase 3 training environment
+register(
+    id='Phase3Final-v0',
+    entry_point='rocket_env.phase3_final:Phase3Final',
     max_episode_steps=2000, 
 )
