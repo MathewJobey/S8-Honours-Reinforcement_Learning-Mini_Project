@@ -13,25 +13,21 @@ class RocketVisualizer:
         self.font = None
         self.current_flame_power = 0.0
         self.stars = []
-        self.camera_y = 0.0  # Tracks camera altitude
-        # --- NEW: BUBBLE MEMORY BANK ---
+        self.camera_y = 0.0
         self.side_particles = []
     
     def init_window(self):
         if self.screen is None:
-            # --- FIX 1: CENTER WINDOW ---
-            # This forces the window to open in the middle of your monitor,
-            # keeping it clear of the taskbar.
             os.environ['SDL_VIDEO_CENTERED'] = '1'
             
-        if self.screen is None:
+            # --- Initialize Pygame and Create Window ---
             pygame.init()
             pygame.display.init()
             self.screen = pygame.display.set_mode((VIEWPORT_W, VIEWPORT_H))
             self.clock = pygame.time.Clock()
             self.font = pygame.font.SysFont("Arial", 20)
 
-            # --- GENERATE STARS ONCE ---
+            # --- GENERATE STARS 150 CODE ---
             self.stars = []
             for _ in range(150):
                 x = random.randint(0, VIEWPORT_W)
@@ -293,7 +289,6 @@ class RocketVisualizer:
         
         # Safely get the values from the environment
         drag_val = getattr(self.env, 'current_drag', 0.0)
-        torque_val = getattr(self.env, 'current_torque', 0.0)
         # Safely get the exact joystick values from the AI
         nose_val = getattr(self.env, 'nose_side_power', 0.0)
         center_val = getattr(self.env, 'center_side_power', 0.0)
@@ -305,7 +300,6 @@ class RocketVisualizer:
             f"Y Vel: {abs(vel.y):.1f} m/s",
             f"Angle: {math.degrees(self.env.lander.angle):.1f}",
             f"Aero Drag: {drag_val:.1f} N",               
-            f"Flap Torque: {abs(torque_val):.1f} Nm",  
             # Show the exact power output of the AI (from -1.0 to 1.0)
             f"Nose Pwr: {nose_val:.2f}",               
             f"Center Pwr: {center_val:.2f}"   
