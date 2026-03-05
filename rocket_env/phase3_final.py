@@ -170,10 +170,22 @@ class Phase3Final(gym.Env):
             self.lander.angularVelocity/6.0,# 6. Angular Velocity
             self.fuel_left / INITIAL_FUEL   # 7. Fuel
         ]
+    """RENDERING FUNCTION TO VISUALIZE THE ENVIRONMENT. THIS USES THE RocketVisualizer CLASS TO DRAW THE ROCKET, TERRAIN, AND OTHER ELEMENTS ON THE SCREEN."""
+    def render(self):
+        return self.visualizer.render(self.render_mode)
+
+    """CLOSE FUNCTION TO CLEAN UP RESOURCES WHEN THE ENVIRONMENT IS DONE. THIS ENSURES THAT THE VISUALIZER IS PROPERLY CLOSED AND THAT THE PHYSICS WORLD IS DESTROYED TO FREE UP MEMORY."""
+    def close(self):
+        self.visualizer.close()
+        self._destroy()
+    """DESTROY FUNCTION TO CLEAN UP THE PHYSICS WORLD. THIS IS CALLED WHEN THE ENVIRONMENT IS RESET OR CLOSED TO ENSURE THAT ALL PHYSICS OBJECTS ARE PROPERLY REMOVED AND THAT THERE ARE NO MEMORY LEAKS."""
+    def _destroy(self):
+        if not self.world: return
+        self.world = None
     
     def _create_rocket(self):
         initial_x = 0
-        initial_y = 500.0
+        initial_y = self.start_y
         
         # 1. Compound Body: Main Hull (90kg) + Nose Cone (10kg) = 100kg Total
         self.lander = self.world.CreateDynamicBody(
@@ -199,6 +211,7 @@ class Phase3Final(gym.Env):
                         (ROCKET_H_WIDTH, ROCKET_HEIGHT),     # Bottom Right of nose
                         (0, ROCKET_HEIGHT + NOSE_HEIGHT)     # Top Center Tip
                     ]),
+                    # Density is lighter because the cone is mostly empty space!
                     density=(10.0 / 2.25), friction=0.5, categoryBits=0x0010, maskBits=0x001, restitution=0.0
                 )
             ]
