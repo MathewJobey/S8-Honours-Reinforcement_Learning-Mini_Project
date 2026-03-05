@@ -34,7 +34,8 @@ class RocketVisualizer:
                 y = random.randint(0, VIEWPORT_H) 
                 radius = random.randint(1, 2)
                 self.stars.append((x, y, radius))
-            
+    
+    """RENDER FUNCTION: This is where all the magic happens. We use a "Painter's Algorithm" approach to draw the scene in layers, starting with the background and stars, then the ground, landing pad, and finally the rocket and HUD on top. The camera logic ensures that the rocket stays centered vertically, creating a smooth scrolling effect as it ascends or descends. We also added a dynamic fuel bar in the HUD that visually represents how much fuel is left, making it easier for both humans and AI to gauge their remaining resources at a glance."""       
     def render(self, mode="human"):
         """Renders the world with stars, ground, and hazard pad PAINTERS ALGORITHM."""
         self.init_window()
@@ -102,7 +103,8 @@ class RocketVisualizer:
             return np.transpose(
                 np.array(pygame.surfarray.pixels3d(self.screen)), axes=(1, 0, 2)
             )
-
+            
+    """DRAWING FUNCTIONS BELOW: We use local coordinate math to ensure the rocket is always perfectly centered and oriented, regardless of its position or angle. This allows us to add detailed features like fins and a nose cone without worrying about them looking distorted as the rocket rotates."""
     def _draw_rocket_details(self, lander):
         """Draws the rocket with clean, sharp outlines."""
         pos = lander.position
@@ -190,6 +192,7 @@ class RocketVisualizer:
         pygame.draw.polygon(self.screen, (100, 100, 100), r_front_fin)
         pygame.draw.polygon(self.screen, BLACK, r_front_fin, 2)
 
+    """EXHAUST & PARTICLE EFFECTS: We create a dynamic exhaust flame that changes length based on the main engine power, with a flickering effect for realism. The side thrusters emit blue and purple bubbles that represent the AI's control inputs, giving us visual feedback on how the AI is maneuvering the rocket. These effects not only enhance the visual appeal but also provide valuable information about the rocket's current state and the AI's actions."""
     def _draw_exhaust(self):
         power = getattr(self.env, 'main_engine_power', 0.0)
         self.current_flame_power += (power - self.current_flame_power) * 0.2
@@ -215,10 +218,18 @@ class RocketVisualizer:
         # ==========================================
         if self.current_flame_power >= 0.05:
             t = pygame.time.get_ticks() * 0.05
-            flicker = (math.sin(t) * 0.1) + (math.cos(t * 3) * 0.05)
+            # Make the flicker slightly larger to match a bigger flame
+            flicker = (math.sin(t) * 0.5) + (math.cos(t * 3) * 0.2)
             
-            flame_len = (self.current_flame_power * 3.0) + flicker
-            flame_w = 0.5 * self.current_flame_power
+            # THE FIX 1: Make the flame length responsive to the rocket's height!
+            # At 100% power, the flame is 1.5x longer than the entire rocket.
+            base_len = self.current_flame_power * (ROCKET_HEIGHT * 1.5)
+            
+            # THE FIX 2: Safety net! The max() guarantees the flame never goes inverted
+            flame_len = max(0.1, base_len + flicker)
+            
+            # THE FIX 3: Make the flame width match the rocket's width
+            flame_w = ROCKET_H_WIDTH * self.current_flame_power
 
             # Using Local Coordinates perfectly centers the flame base
             points = [
@@ -233,8 +244,7 @@ class RocketVisualizer:
         # ==========================================
         center_power = getattr(self.env, 'center_side_power', 0.0)
         nose_power = getattr(self.env, 'nose_side_power', 0.0)
-        
-        # Helper to spawn bubbles. We added a 'color' variable!
+
         # Helper to spawn bubbles. 
         def spawn_bubbles(power_val, local_y, color):
             # LOWERED THRESHOLD: Show bubbles even if AI uses just 1% power!
@@ -243,8 +253,16 @@ class RocketVisualizer:
                 start_x = pos.x - math.sin(angle) * local_y + (math.cos(angle) * ROCKET_H_WIDTH * direction)
                 start_y = pos.y + math.cos(angle) * local_y + (math.sin(angle) * ROCKET_H_WIDTH * direction)
                 
-                for _ in range(3): # Increased to 3 particles for better visibility
-                    speed = random.uniform(2.0, 6.0)
+                # THE FIX 1: Scale the number of bubbles (Max 5 at full power)
+                # math.ceil ensures even at 1% power, it spawns at least 1 bubble
+                num_bubbles = math.ceil(5 * abs(power_val))
+                
+                for _ in range(num_bubbles): 
+                    # THE FIX 2: Scale the speed. 
+                    # We multiply the random speed by the power, and add a 1.5x boost so it looks punchy
+                    base_speed = random.uniform(2.0, 6.0)
+                    speed = base_speed * abs(power_val) * 1.5 
+                    
                     self.side_particles.append({
                         "x": start_x, "y": start_y,
                         "vx": math.cos(angle) * speed * direction,
@@ -260,8 +278,8 @@ class RocketVisualizer:
         # Update and draw all bubbles
         living_particles = []
         for p in self.side_particles:
-            p["x"] += p["vx"] * (1.0 / FPS)
-            p["y"] += p["vy"] * (1.0 / FPS)
+            p["x"] += p["vx"] 
+            p["y"] += p["vy"] 
             p["life"] -= 0.05 
             
             if p["life"] > 0:
