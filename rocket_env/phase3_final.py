@@ -47,7 +47,6 @@ class Phase3Final(gym.Env):
         self.landing_status = "IN_PROGRESS"
         
         self.current_drag = 0.0
-        self.current_torque = 0.0
         
         self._create_terrain()
         self._create_rocket()
@@ -95,7 +94,6 @@ class Phase3Final(gym.Env):
         
         # 4. AERODYNAMIC DRAG
         self.current_drag = 0.0
-        self.current_torque = 0.0
         exposed_area = abs(math.sin(angle)) * 0.9 + 0.1 
         velocity_squared = vel.x**2 + vel.y**2
         if velocity_squared > 0:
@@ -144,7 +142,7 @@ class Phase3Final(gym.Env):
             
         # Added fuel consumption for nose thrusters, also at 50% the rate of the main engine
         if abs(nose_side_power) > 0:
-            self.fuel_left -= (FUEL_CONSUMPTION_RATE / FPS) * abs(nose_side_power) * 0.5
+            self.fuel_left -= (FUEL_CONSUMPTION_RATE / FPS) * abs(nose_side_power) * 0.3
 
         state = self._get_state()
         reward, terminated, truncated = self._compute_reward(state)
@@ -178,6 +176,7 @@ class Phase3Final(gym.Env):
     def close(self):
         self.visualizer.close()
         self._destroy()
+        
     """DESTROY FUNCTION TO CLEAN UP THE PHYSICS WORLD. THIS IS CALLED WHEN THE ENVIRONMENT IS RESET OR CLOSED TO ENSURE THAT ALL PHYSICS OBJECTS ARE PROPERLY REMOVED AND THAT THERE ARE NO MEMORY LEAKS."""
     def _destroy(self):
         if not self.world: return
