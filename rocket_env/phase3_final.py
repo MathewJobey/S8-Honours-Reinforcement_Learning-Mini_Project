@@ -61,6 +61,55 @@ class Phase2Descent(gym.Env):
 
         return self.step(np.array([0, 0, 0]))[0], {}     
     
+    def _apply_forces(self, main_power, center_power, nose_power):
+        angle = self.lander.angle
+        vel = self.lander.linearVelocity
+        
+        # 1. Main Engine Force pushed on COM
+        main_force_x = float(-math.sin(angle) * main_power * MAIN_ENGINE_POWER)
+        main_force_y = float(math.cos(angle) * main_power * MAIN_ENGINE_POWER)
+        self.lander.ApplyForceToCenter((main_force_x, main_force_y), wake=True)
+        
+        # 2. Center Thrusters (Pure Translation/Sliding)
+        center_force = float(center_power * SIDE_ENGINE_POWER)
+        c_impulse_x = float(-center_force * math.cos(angle))
+        c_impulse_y = float(-center_force * math.sin(angle))
+        self.lander.ApplyLinearImpulse(
+            (c_impulse_x, c_impulse_y), 
+            self.lander.GetWorldPoint(localPoint=(0, (ROCKET_HEIGHT + NOSE_HEIGHT) / 2.0)),#because height is 12.5
+            wake=True
+        )
+        # 3. Nose Thrusters (Torque/Tilting)
+        nose_force = float(nose_power * NOSE_ENGINE_POWER)
+        n_impulse_x = float(-nose_force * math.cos(angle))
+        n_impulse_y = float(-nose_force * math.sin(angle))
+        self.lander.ApplyLinearImpulse(
+            (n_impulse_x, n_impulse_y), 
+            self.lander.GetWorldPoint(localPoint=(0, ROCKET_HEIGHT)), #nose thrusters are at the top of the rocket, so we use the full height as the local point
+            wake=True
+        )
+        
+        # 4. AERODYNAMIC DRAG
+        self.current_drag = 0.0
+        self.current_torque = 0.0
+        exposed_area = abs(math.sin(angle)) * 0.9 + 0.1 
+        velocity_squared = vel.x**2 + vel.y**2
+        if velocity_squared > 0:
+            drag_magnitude = 0.5 * velocity_squared * exposed_area
+            self.current_drag = drag_magnitude
+            
+            speed = math.sqrt(velocity_squared)
+            drag_x = -(vel.x / speed) * drag_magnitude
+            drag_y = -(vel.y / speed) * drag_magnitude
+            
+            center_y = (ROCKET_HEIGHT + NOSE_HEIGHT) / 2.0
+            offset_y = center_y+0.1 # Slightly above the center of mass to create torque
+            drag_point = self.lander.GetWorldPoint(localPoint=(0, offset_y))
+            
+            self.lander.ApplyForce((drag_x, drag_y), drag_point, wake=True)
+    
+    
+    
     def _create_rocket(self):
         initial_x = 0
         initial_y = 500.0
