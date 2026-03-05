@@ -8,7 +8,7 @@ from .settings import *
 from .physics import ContactDetector
 from .visualizer import RocketVisualizer
 
-class Phase2Descent(gym.Env):
+class Phase3Final(gym.Env):
     metadata = {'render_modes': ['human', 'rgb_array'], 'render_fps': FPS}
 
     def __init__(self, render_mode=None):
@@ -61,6 +61,7 @@ class Phase2Descent(gym.Env):
 
         return self.step(np.array([0, 0, 0]))[0], {}     
     
+    """APPLY FORCES BASED ON THE ACTIONS TAKEN BY THE AGENT. THIS INCLUDES MAIN ENGINE THRUST, SIDE THRUSTERS, AND AERODYNAMIC DRAG."""
     def _apply_forces(self, main_power, center_power, nose_power):
         angle = self.lander.angle
         vel = self.lander.linearVelocity
@@ -79,6 +80,7 @@ class Phase2Descent(gym.Env):
             self.lander.GetWorldPoint(localPoint=(0, (ROCKET_HEIGHT + NOSE_HEIGHT) / 2.0)),#because height is 12.5
             wake=True
         )
+        
         # 3. Nose Thrusters (Torque/Tilting)
         nose_force = float(nose_power * NOSE_ENGINE_POWER)
         n_impulse_x = float(-nose_force * math.cos(angle))
@@ -108,6 +110,43 @@ class Phase2Descent(gym.Env):
             
             self.lander.ApplyForce((drag_x, drag_y), drag_point, wake=True)
     
+    """THE STEP FUNCTION TO ADVANCE THE ENVIRONMENT BY ONE TIME STEP. THIS IS CALLED AT EVERY TIME STEP OF THE EPISODE."""
+    def step(self, action):
+        action = np.clip(action, -1, 1) 
+        main_engine_power = np.clip(action[0], 0.0, 1.0)
+        center_side_power = np.clip(action[1], -1.0, 1.0)
+        nose_side_power = np.clip(action[2], -1.0, 1.0)
+        
+        if self.fuel_left <= 0:
+            main_engine_power = 0
+            center_side_power = 0
+            nose_side_power = 0
+            
+        self.main_engine_power = main_engine_power
+        self.center_side_power = center_side_power
+        self.nose_side_power = nose_side_power
+        
+        vel = self.lander.linearVelocity
+        self.pre_step_velocity = math.sqrt(vel.x**2 + vel.y**2)
+        
+        self._apply_forces(main_engine_power, center_side_power, nose_side_power)
+        self.world.Step(1.0 / FPS, 6, 2)
+
+        # --- FIX 2: STEERING FUEL COST ---
+        if main_engine_power > 0:
+            self.fuel_left -= (FUEL_CONSUMPTION_RATE / FPS) * main_engine_power
+            
+        # Added fuel consumption for center side thrusters, at 50% the rate of the main engine since they are smaller and less powerful
+        if abs(center_side_power) > 0:
+            self.fuel_left -= (FUEL_CONSUMPTION_RATE / FPS) * abs(center_side_power) * 0.5
+            
+        # Added fuel consumption for nose thrusters, also at 50% the rate of the main engine
+        if abs(nose_side_power) > 0:
+            self.fuel_left -= (FUEL_CONSUMPTION_RATE / FPS) * abs(nose_side_power) * 0.5
+
+        state = self._get_state()
+        reward, terminated, truncated = self._compute_reward(state)
+        return np.array(state, dtype=np.float32), reward, terminated, truncated, {}
     
     
     def _create_rocket(self):
