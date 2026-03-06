@@ -73,25 +73,26 @@ class Phase3Final(gym.Env):
         self.lander.ApplyForceToCenter((main_force_x, main_force_y), wake=True)
         
         # 2. Center Thrusters (Pure Translation/Sliding)
-        center_force = float(center_power * SIDE_ENGINE_POWER)
-        c_impulse_x = float(-center_force * math.cos(angle))
-        c_impulse_y = float(-center_force * math.sin(angle))
+        center_force_mag = float(center_power * SIDE_ENGINE_POWER)
+        c_force_x = float(-center_force_mag * math.cos(angle))
+        c_force_y = float(-center_force_mag * math.sin(angle))
         
-        # THE FIX: Replace the manual math with self.lander.worldCenter
-        # This guarantees 100% pure sliding with absolutely ZERO accidental twisting!
-        self.lander.ApplyLinearImpulse(
-            (c_impulse_x, c_impulse_y), 
+        # We changed this from ApplyLinearImpulse to ApplyForce!
+        self.lander.ApplyForce(
+            (c_force_x, c_force_y), 
             self.lander.worldCenter, 
             wake=True
         )
         
         # 3. Nose Thrusters (Torque/Tilting)
-        nose_force = float(nose_power * NOSE_ENGINE_POWER)
-        n_impulse_x = float(-nose_force * math.cos(angle))
-        n_impulse_y = float(-nose_force * math.sin(angle))
-        self.lander.ApplyLinearImpulse(
-            (n_impulse_x, n_impulse_y), 
-            self.lander.GetWorldPoint(localPoint=(0, ROCKET_HEIGHT)), #nose thrusters are at the top of the rocket, so we use the full height as the local point
+        nose_force_mag = float(nose_power * NOSE_ENGINE_POWER)
+        n_force_x = float(-nose_force_mag * math.cos(angle))
+        n_force_y = float(-nose_force_mag * math.sin(angle))
+        
+        # We changed this from ApplyLinearImpulse to ApplyForce!
+        self.lander.ApplyForce(
+            (n_force_x, n_force_y), 
+            self.lander.GetWorldPoint(localPoint=(0, ROCKET_HEIGHT)), 
             wake=True
         )
         
@@ -192,54 +193,76 @@ class Phase3Final(gym.Env):
         pos = self.lander.position
         vel = self.lander.linearVelocity
         
-        # Standardize the angle
         norm_angle = (self.lander.angle + math.pi) % (2 * math.pi) - math.pi
         tilt_rad = abs(norm_angle)
-        
-        # ==========================================
-        # 1. OUT OF BOUNDS (The Safety Net)
-        # ==========================================
         x_range = VIEWPORT_W / SCALE / 2
+
+        # ==========================================
+        # STEP 1: THE SANDBOX
+        # ==========================================
         if abs(pos.x) >= x_range or pos.y > self.max_altitude:
             self.landing_status = "CRASH"
             return -200.0, True, False
 
         # ==========================================
-        # 2. EFFICIENCY TAXES (The Fix for Hovering & Fuel)
+        # STEP 2: POSTURE & RADAR (The Magnets)
         # ==========================================
-        # Time Tax: Forces the AI to stop hovering and accept falling
-        reward -= 0.1 
-        
-        # Fuel Taxes: Forces the AI to tap the buttons instead of holding them
-        reward -= (self.main_engine_power * 0.5)  # Heavy penalty so it rarely uses the main engine
-        reward -= abs(self.center_side_power) * 0.1
-        reward -= abs(self.nose_side_power) * 0.1
+        # Posture Magnet (Trains Nose)
+        posture_reward = math.exp(-tilt_rad * 10.0)
+        reward += posture_reward * 10.0
+        reward -= abs(self.lander.angularVelocity) * 10.0
+
+        # Centering Magnet (Trains Side Thrusters)
+        center_reward = math.exp(-abs(pos.x))
+        reward += center_reward * 10.0
+        reward -= abs(vel.x) * 5.0
 
         # ==========================================
-        # 3. ALIGNMENT & CENTERING RADAR
+        # STEP 3: GLIDE SLOPE (The Main Engine Trainer)
         # ==========================================
-        # Upright Bonus: Massive reward for staying straight
-        reward += (1.0 - tilt_rad) * 10.0
+        # Create a smooth braking curve using the square root of the altitude!
+        # The max(1.0, ...) ensures the speed limit never drops below 1 m/s at the very end
+        target_speed = -max(1.0, math.sqrt(max(0.0, pos.y)))
         
-        # Center Bonus: Massive reward for staying in the middle of the screen
-        center_distance = abs(pos.x) / (x_range * 0.5)
-        reward += (1.0 - center_distance) * 10.0
+        # If it falls faster than the target speed, apply a heavy penalty!
+        if vel.y < target_speed:
+            speed_violation = abs(vel.y - target_speed)
+            reward -= speed_violation * 2.0
 
         # ==========================================
-        # 4. STABILITY (Anti-Spin & Anti-Drift)
+        # STEP 4: FUEL EFFICIENCY (Gentle Taxes)
         # ==========================================
-        # Penalty for spinning!
-        reward -= abs(self.lander.angularVelocity) * 5.0
+        # A tiny time tax ensures it doesn't hover perfectly to farm points
+        reward -= 0.05 
         
-        # Penalty for sliding sideways! Forces it to use center thrusters to brake.
-        reward -= abs(vel.x) * 2.0
+        # Gentle fuel taxes so it learns to tap, not hold
+        reward -= (self.main_engine_power * 0.1)  
+        reward -= abs(self.center_side_power) * 0.05
+        reward -= abs(self.nose_side_power) * 0.05
 
         # ==========================================
-        # 5. TERMINAL STATE
+        # STEP 5: TERMINAL STATE (The Jackpot)
         # ==========================================
         if self.game_over:
             terminated = True
-            self.landing_status = "CRASH"
+            
+            # Strict Landing Criteria!
+            is_slow = abs(vel.y) < 1.0       # Must be under 1 m/s vertical speed!
+            is_straight = tilt_rad < 0.15    # Almost perfectly straight
+            
+            # For the pad check, we pull the physical width from your settings
+            pad_half_width = PAD_WIDTH_METERS / 2.0
+            is_on_pad = abs(pos.x) < pad_half_width
+            
+            if is_slow and is_straight and is_on_pad:
+                # WIN: Base 1000 + Fuel Efficiency Jackpot
+                fuel_bonus = self.fuel_left * 2.0
+                reward += 1000.0 + fuel_bonus
+                self.landing_status = "LANDED"
+            else:
+                # LOSE: Massive Crash Penalty
+                reward -= 500.0
+                self.landing_status = "CRASH"
 
         return reward, terminated, truncated
     
