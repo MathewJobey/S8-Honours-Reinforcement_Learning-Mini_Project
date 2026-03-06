@@ -184,7 +184,6 @@ class Phase3Final(gym.Env):
         ]
         
     """REWARD FUNCTION TO CALCULATE THE REWARD FOR THE CURRENT STATE. THIS FUNCTION TAKES INTO ACCOUNT THE DISTANCE TO THE LANDING PAD, THE VELOCITY, THE ANGLE, AND THE FUEL LEFT TO COMPUTE A COMPREHENSIVE REWARD SIGNAL THAT ENCOURAGES SAFE AND EFFICIENT LANDINGS."""   
-    
     def _compute_reward(self, state):
         reward = 0.0
         terminated = False 
@@ -193,76 +192,54 @@ class Phase3Final(gym.Env):
         pos = self.lander.position
         vel = self.lander.linearVelocity
         
+        # Standardize the angle
         norm_angle = (self.lander.angle + math.pi) % (2 * math.pi) - math.pi
         tilt_rad = abs(norm_angle)
         
         # ==========================================
-        # 1. OUT OF BOUNDS
+        # 1. OUT OF BOUNDS (The Safety Net)
         # ==========================================
         x_range = VIEWPORT_W / SCALE / 2
         if abs(pos.x) >= x_range or pos.y > self.max_altitude:
             self.landing_status = "CRASH"
             return -200.0, True, False
-        
-        # ==========================================
-        # 1. UNIVERSAL TAXES & SPIN PENALTY
-        # ==========================================
-        reward -= 0.1  # Time tax
-        
-        reward -= (self.main_engine_power * 0.02)
-        reward -= (abs(self.center_side_power) * 0.005)
-        reward -= (abs(self.nose_side_power) * 0.01)
-
-        # THE FIX 1: Punish rotational spinning heavily!
-        reward -= abs(self.lander.angularVelocity) * 0.5
 
         # ==========================================
-        # 3. THE RADAR (Positive Breadcrumbs)
+        # 2. EFFICIENCY TAXES (The Fix for Hovering & Fuel)
         # ==========================================
-        # If tilt is 0, it gets +2.0 points. If it leans, the bonus drops to 0 or negative.
-        upright_bonus = 1.0 - tilt_rad
-        reward += (upright_bonus * 2.0)
+        # Time Tax: Forces the AI to stop hovering and accept falling
+        reward -= 0.1 
         
-        # If it is perfectly centered over the pad, it gets +1.0 point.
-        center_bonus = 1.0 - (abs(pos.x) / (x_range * 0.5))
-        reward += (center_bonus * 1.0)
+        # Fuel Taxes: Forces the AI to tap the buttons instead of holding them
+        reward -= (self.main_engine_power * 0.5)  # Heavy penalty so it rarely uses the main engine
+        reward -= abs(self.center_side_power) * 0.1
+        reward -= abs(self.nose_side_power) * 0.1
 
         # ==========================================
-        # 4. ALTITUDE PHASES (Speed Limits)
+        # 3. ALIGNMENT & CENTERING RADAR
         # ==========================================
-        if pos.y > 200.0:
-            # Phase 1: Freefall - Let it fall fast to save time and fuel
-            pass 
-            
-        elif pos.y > 50.0:
-            # Phase 2: The Approach - Hit the brakes! Max speed 20 m/s
-            if vel.y < -20.0:
-                reward -= abs(vel.y + 20.0) * 0.2
-                
-        else:
-            # Phase 3: Touchdown - Crawl to the pad! Max speed 5 m/s
-            if vel.y < -5.0:
-                reward -= abs(vel.y + 5.0) * 0.5
-            
-            # Stricter anti-slide penalty near the ground
-            reward -= abs(vel.x) * 0.5 
+        # Upright Bonus: Massive reward for staying straight
+        reward += (1.0 - tilt_rad) * 10.0
+        
+        # Center Bonus: Massive reward for staying in the middle of the screen
+        center_distance = abs(pos.x) / (x_range * 0.5)
+        reward += (1.0 - center_distance) * 10.0
+
+        # ==========================================
+        # 4. STABILITY (Anti-Spin & Anti-Drift)
+        # ==========================================
+        # Penalty for spinning!
+        reward -= abs(self.lander.angularVelocity) * 5.0
+        
+        # Penalty for sliding sideways! Forces it to use center thrusters to brake.
+        reward -= abs(vel.x) * 2.0
 
         # ==========================================
         # 5. TERMINAL STATE
         # ==========================================
         if self.game_over:
             terminated = True
-            
-            is_slow = self.pre_step_velocity < 2.0
-            is_straight = tilt_rad < 0.1
-            is_on_pad = abs(pos.x) < (PAD_WIDTH_METERS / 2.0)
-            
-            if is_slow and is_straight and is_on_pad:
-                reward += 1000.0
-                self.landing_status = "LANDED"
-            else:
-                reward -= 200.0
-                self.landing_status = "CRASH"
+            self.landing_status = "CRASH"
 
         return reward, terminated, truncated
     
