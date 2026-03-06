@@ -76,9 +76,12 @@ class Phase3Final(gym.Env):
         center_force = float(center_power * SIDE_ENGINE_POWER)
         c_impulse_x = float(-center_force * math.cos(angle))
         c_impulse_y = float(-center_force * math.sin(angle))
+        
+        # THE FIX: Replace the manual math with self.lander.worldCenter
+        # This guarantees 100% pure sliding with absolutely ZERO accidental twisting!
         self.lander.ApplyLinearImpulse(
             (c_impulse_x, c_impulse_y), 
-            self.lander.GetWorldPoint(localPoint=(0, (ROCKET_HEIGHT + NOSE_HEIGHT) / 2.0)),#because height is 12.5
+            self.lander.worldCenter, 
             wake=True
         )
         
@@ -94,8 +97,11 @@ class Phase3Final(gym.Env):
         
         # 4. AERODYNAMIC DRAG
         self.current_drag = 0.0
+        
+        # Calculates belly-flop drag! (Upright = 0.1, Sideways = 1.0)
         exposed_area = abs(math.sin(angle)) * 0.9 + 0.1 
         velocity_squared = vel.x**2 + vel.y**2
+        
         if velocity_squared > 0:
             drag_magnitude = 0.5 * velocity_squared * exposed_area
             self.current_drag = drag_magnitude
@@ -104,8 +110,16 @@ class Phase3Final(gym.Env):
             drag_x = -(vel.x / speed) * drag_magnitude
             drag_y = -(vel.y / speed) * drag_magnitude
             
-            center_y = (ROCKET_HEIGHT + NOSE_HEIGHT) / 2.0
-            offset_y = center_y+0.1 # Slightly above the center of mass to create torque
+            # --- THE FIX: The True Center of Pressure ---
+            # Get the exact mathematical Center of Mass in local coordinates
+            true_com_y = self.lander.localCenter.y
+            
+            # Push EXACTLY 1.0 meter above the true Center of Mass. 
+            # This creates a realistic "weathervane" torque that tries to flip the 
+            # rocket, but is weak enough that the AI's nose thrusters can fight it!
+            offset_y = true_com_y + 1.0 
+            
+            # Translate that local spot into global Box2D coordinates
             drag_point = self.lander.GetWorldPoint(localPoint=(0, offset_y))
             
             self.lander.ApplyForce((drag_x, drag_y), drag_point, wake=True)
@@ -168,6 +182,90 @@ class Phase3Final(gym.Env):
             self.lander.angularVelocity/6.0,# 6. Angular Velocity
             self.fuel_left / INITIAL_FUEL   # 7. Fuel
         ]
+        
+    """REWARD FUNCTION TO CALCULATE THE REWARD FOR THE CURRENT STATE. THIS FUNCTION TAKES INTO ACCOUNT THE DISTANCE TO THE LANDING PAD, THE VELOCITY, THE ANGLE, AND THE FUEL LEFT TO COMPUTE A COMPREHENSIVE REWARD SIGNAL THAT ENCOURAGES SAFE AND EFFICIENT LANDINGS."""   
+    
+    def _compute_reward(self, state):
+        reward = 0.0
+        terminated = False 
+        truncated = False
+        
+        pos = self.lander.position
+        vel = self.lander.linearVelocity
+        
+        norm_angle = (self.lander.angle + math.pi) % (2 * math.pi) - math.pi
+        tilt_rad = abs(norm_angle)
+        
+        # ==========================================
+        # 1. OUT OF BOUNDS
+        # ==========================================
+        x_range = VIEWPORT_W / SCALE / 2
+        if abs(pos.x) >= x_range or pos.y > self.max_altitude:
+            self.landing_status = "CRASH"
+            return -200.0, True, False
+        
+        # ==========================================
+        # 1. UNIVERSAL TAXES & SPIN PENALTY
+        # ==========================================
+        reward -= 0.1  # Time tax
+        
+        reward -= (self.main_engine_power * 0.02)
+        reward -= (abs(self.center_side_power) * 0.005)
+        reward -= (abs(self.nose_side_power) * 0.01)
+
+        # THE FIX 1: Punish rotational spinning heavily!
+        reward -= abs(self.lander.angularVelocity) * 0.5
+
+        # ==========================================
+        # 3. THE RADAR (Positive Breadcrumbs)
+        # ==========================================
+        # If tilt is 0, it gets +2.0 points. If it leans, the bonus drops to 0 or negative.
+        upright_bonus = 1.0 - tilt_rad
+        reward += (upright_bonus * 2.0)
+        
+        # If it is perfectly centered over the pad, it gets +1.0 point.
+        center_bonus = 1.0 - (abs(pos.x) / (x_range * 0.5))
+        reward += (center_bonus * 1.0)
+
+        # ==========================================
+        # 4. ALTITUDE PHASES (Speed Limits)
+        # ==========================================
+        if pos.y > 200.0:
+            # Phase 1: Freefall - Let it fall fast to save time and fuel
+            pass 
+            
+        elif pos.y > 50.0:
+            # Phase 2: The Approach - Hit the brakes! Max speed 20 m/s
+            if vel.y < -20.0:
+                reward -= abs(vel.y + 20.0) * 0.2
+                
+        else:
+            # Phase 3: Touchdown - Crawl to the pad! Max speed 5 m/s
+            if vel.y < -5.0:
+                reward -= abs(vel.y + 5.0) * 0.5
+            
+            # Stricter anti-slide penalty near the ground
+            reward -= abs(vel.x) * 0.5 
+
+        # ==========================================
+        # 5. TERMINAL STATE
+        # ==========================================
+        if self.game_over:
+            terminated = True
+            
+            is_slow = self.pre_step_velocity < 2.0
+            is_straight = tilt_rad < 0.1
+            is_on_pad = abs(pos.x) < (PAD_WIDTH_METERS / 2.0)
+            
+            if is_slow and is_straight and is_on_pad:
+                reward += 1000.0
+                self.landing_status = "LANDED"
+            else:
+                reward -= 200.0
+                self.landing_status = "CRASH"
+
+        return reward, terminated, truncated
+    
     """RENDERING FUNCTION TO VISUALIZE THE ENVIRONMENT. THIS USES THE RocketVisualizer CLASS TO DRAW THE ROCKET, TERRAIN, AND OTHER ELEMENTS ON THE SCREEN."""
     def render(self):
         return self.visualizer.render(self.render_mode)
@@ -181,7 +279,36 @@ class Phase3Final(gym.Env):
     def _destroy(self):
         if not self.world: return
         self.world = None
-    
+        
+    """FUNCTION TO CREATE THE TERRAIN, INCLUDING THE FLAT DIRT AND THE LANDING PAD. THIS SETS UP THE PHYSICS BODIES FOR THE GROUND AND THE PAD, AND TAGS THEM WITH USER DATA SO THAT THE CONTACT DETECTOR CAN IDENTIFY THEM DURING COLLISIONS."""   
+    def _create_terrain(self):
+        # We calculate how wide the physical world is in meters
+        world_width = VIEWPORT_W / SCALE
+        
+        # 1. THE FLAT DIRT
+        # Create an unbreakable static body (it has no weight and never moves)
+        self.ground = self.world.CreateStaticBody(
+            position=(0, 0),
+            shapes=edgeShape(vertices=[(-world_width, 0), (world_width, 0)])
+        )
+        # Tag it so the ContactDetector knows this is a crash zone!
+        self.ground.userData = "ground"
+        
+        # 2. THE LANDING PAD
+        # Create a raised concrete block exactly in the center
+        self.pad = self.world.CreateStaticBody(
+            position=(0, PAD_HEIGHT_METERS / 2.0),
+            fixtures=fixtureDef(
+                # box() takes half-width and half-height to draw a perfect rectangle
+                shape=polygonShape(box=(PAD_WIDTH_METERS / 2.0, PAD_HEIGHT_METERS / 2.0)),
+                friction=0.8,     # Very grippy so the rocket doesn't slide off easily!
+                restitution=0.0   # Solid concrete, zero bounce
+            )
+        )
+        # Tag it so the ContactDetector knows this is the safe zone!
+        self.pad.userData = "pad"
+        
+    """FUNCTION TO CREATE THE ROCKET BODY. THIS COMPOUNDS TWO FIXTURES TOGETHER TO FORM THE ROCKET: A HEAVY MAIN HULL AND A LIGHTWEIGHT NOSE CONE. THIS ALLOWS US TO SIMULATE MORE REALISTIC PHYSICS, SUCH AS THE ROCKET TIPPING OVER IF THE NOSE CONE HITS THE GROUND FIRST. WE ALSO SET A USER DATA TAG ON THE ROCKET SO THAT THE CONTACT DETECTOR CAN IDENTIFY IT DURING COLLISIONS."""
     def _create_rocket(self):
         initial_x = 0
         initial_y = self.start_y
