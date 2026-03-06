@@ -273,7 +273,8 @@ class RocketVisualizer:
 
         # Spawn Center bubbles (Cyan) and Nose bubbles (Purple)
         spawn_bubbles(center_power, ROCKET_HEIGHT / 2.0, (0,255,236))
-        spawn_bubbles(nose_power, ROCKET_HEIGHT * 0.85, (255,0,206))
+        nose_y_visual = ROCKET_HEIGHT + (NOSE_HEIGHT / 2.0)
+        spawn_bubbles(nose_power, nose_y_visual, (255,0,206))
 
         # Update and draw all bubbles
         living_particles = []

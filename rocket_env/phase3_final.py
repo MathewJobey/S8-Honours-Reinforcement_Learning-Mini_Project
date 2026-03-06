@@ -57,7 +57,7 @@ class Phase3Final(gym.Env):
         self.lander.angle = self.np_random.uniform(-math.pi, math.pi)
         #4. Pick a random falling speed between a hover (0.0) and terminal velocity (-140.0)
         # We use negative numbers because the rocket is moving down the Y-axis
-        start_vy = self.np_random.uniform(-140.0, 0.0)
+        start_vy = self.np_random.uniform(-50.0, 0.0)
         self.lander.linearVelocity = (0, start_vy)
 
         return self.step(np.array([0, 0, 0]))[0], {}     
@@ -84,17 +84,18 @@ class Phase3Final(gym.Env):
             wake=True
         )
         
-        # 3. Nose Thrusters (Torque/Tilting)
-        nose_force_mag = float(nose_power * NOSE_ENGINE_POWER)
-        n_force_x = float(-nose_force_mag * math.cos(angle))
-        n_force_y = float(-nose_force_mag * math.sin(angle))
+        # 3. Nose Thrusters (Pure Torque/Tilting)
+        # We calculate the exact middle of the nose cone!
+        thruster_y = ROCKET_HEIGHT + (NOSE_HEIGHT / 2.0)
         
-        # We changed this from ApplyLinearImpulse to ApplyForce!
-        self.lander.ApplyForce(
-            (n_force_x, n_force_y), 
-            self.lander.GetWorldPoint(localPoint=(0, ROCKET_HEIGHT)), 
-            wake=True
-        )
+        # Calculate how far the nose thrusters are from the true balancing point
+        lever_arm = thruster_y - self.lander.localCenter.y
+        
+        # Calculate the pure twisting force (Torque)
+        torque = float(nose_power * NOSE_ENGINE_POWER * lever_arm)
+        
+        # Apply pure rotation without any horizontal pushing!
+        self.lander.ApplyTorque(torque, wake=True)
         
         # 4. AERODYNAMIC DRAG
         self.current_drag = 0.0
