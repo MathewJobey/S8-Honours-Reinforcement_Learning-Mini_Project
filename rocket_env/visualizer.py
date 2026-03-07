@@ -84,6 +84,7 @@ class RocketVisualizer:
         light_color = (255, 165, 0) # Orange
         if status == "CRASH": light_color = (255, 0, 0)
         elif status == "LANDED": light_color = (0, 255, 100)
+        elif status == "OUT_OF_BOUNDS": light_color = (255, 255, 0)
         
         pygame.draw.circle(self.screen, light_color, (pad_screen_x - pad_w_px//2, pad_screen_y), 6)
         pygame.draw.circle(self.screen, light_color, (pad_screen_x + pad_w_px//2, pad_screen_y), 6)

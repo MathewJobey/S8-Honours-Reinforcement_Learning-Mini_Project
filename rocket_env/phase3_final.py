@@ -70,6 +70,8 @@ class Phase3Final(gym.Env):
         
         # Ensure it is not spinning when it spawns
         self.lander.angularVelocity = 0.0
+        
+        self.prev_y = self.lander.worldCenter.y
 
         return self.step(np.array([0, 0, 0]))[0], {}     
     
@@ -130,7 +132,7 @@ class Phase3Final(gym.Env):
     """THE STEP FUNCTION TO ADVANCE THE ENVIRONMENT BY ONE TIME STEP. THIS IS CALLED AT EVERY TIME STEP OF THE EPISODE."""
     def step(self, action):
         action = np.clip(action, -1, 1) 
-        main_engine_power = np.clip(action[0], 0.0, 1.0)
+        main_engine_power = np.clip(action[0], -1.0, 1.0)
         #center_side_power = np.clip(action[1], -1.0, 1.0)
         #nose_side_power = np.clip(action[2], -1.0, 1.0)
         
@@ -148,6 +150,8 @@ class Phase3Final(gym.Env):
         
         vel = self.lander.linearVelocity
         self.pre_step_velocity = math.sqrt(vel.x**2 + vel.y**2)
+        self.pre_step_vy = vel.y
+        self.prev_y = self.lander.worldCenter.y
         
         self._apply_forces(main_engine_power, center_side_power, nose_side_power)
         self.world.Step(1.0 / FPS, 6, 2)
@@ -170,7 +174,7 @@ class Phase3Final(gym.Env):
     
     """NORMALIZATION OF THE OBSERVATION SPACE. THIS FUNCTION TAKES THE RAW PHYSICS DATA AND SCALES IT TO A RANGE THAT IS EASIER FOR THE AI TO LEARN FROM. THIS INCLUDES NORMALIZING POSITION, VELOCITY, ANGLE, AND FUEL LEVEL."""
     def _get_state(self):
-        pos = self.lander.position
+        pos = self.lander.worldCenter
         vel = self.lander.linearVelocity
         
         world_width_half = VIEWPORT_W / SCALE / 2 
@@ -195,79 +199,54 @@ class Phase3Final(gym.Env):
         terminated = False 
         truncated = False
         
-        # THE FIX: The reward magnets must also track the Center of Mass!
         pos = self.lander.worldCenter
         vel = self.lander.linearVelocity
         
-        # Standardize the angle
         norm_angle = (self.lander.angle + math.pi) % (2 * math.pi) - math.pi
         tilt_rad = abs(norm_angle)
         x_range = VIEWPORT_W / SCALE / 2
 
         # ==========================================
-        # STEP 1: THE SANDBOX
+        # STEP 1: THE BLEEDING BOUNDARY & ANTI-HOVER
         # ==========================================
         if abs(pos.x) >= x_range or pos.y > self.max_altitude:
-            self.landing_status = "CRASH"
-            return -200.0, True, False
-
-        # ==========================================
-        # STEP 2: POSTURE & RADAR (The Magnets)
-        # ==========================================
-        # THE FIX: Changed from * 10.0 to * 5.0 to soften the panic!
-        posture_reward = math.exp(-tilt_rad * 5.0)
-        reward += posture_reward * 10.0
-        
-        # THE FIX: Doubled the spin penalty to kill the wiggling!
-        reward -= abs(self.lander.angularVelocity) * 20.0
-
-        # Centering Magnet (Trains Side Thrusters)
-        center_reward = math.exp(-abs(pos.x))
-        reward += center_reward * 10.0
-        reward -= abs(vel.x) * 5.0
-
-        # ==========================================
-        # STEP 3: GLIDE SLOPE (The Main Engine Trainer)
-        # ==========================================
-        # THE FIX: Because the Center of Mass is 5.5 meters above the engine, 
-        # we subtract 5.5 from pos.y so the speed limit properly reaches 0 at the ground!
-        true_altitude = max(0.0, pos.y - 5.5)
-        target_speed = -max(1.0, math.sqrt(true_altitude))
-        
-        # If it falls faster than the target speed, apply a heavy penalty!
-        if vel.y < target_speed:
-            speed_violation = abs(vel.y - target_speed)
-            reward -= speed_violation * 2.0
+            # Massive 50-point penalty per frame stops the AI from flying up!
+            reward -= 50.0
+            self.landing_status = "OUT_OF_BOUNDS"
+        else:
+            self.landing_status = "IN_PROGRESS"
             
-        # ... Keep your Fuel Taxes and Terminal State exactly the same below this! ...
+        # THE NEW CODE: Compare current Y to previous Y!
+        if pos.y >= self.prev_y:
+            # If it hovers or climbs, it loses 10 points per frame!
+            reward -= 10.0
+
         # ==========================================
-        # STEP 4: THE BRAKES & EFFICIENCY
+        # STEP 2: FUEL & TIME TAX
         # ==========================================
-        # Heavy penalty for spinning (This kills the wiggling!)
-        reward -= abs(self.lander.angularVelocity) * 10.0
-        
-        # Penalty for sliding sideways
-        reward -= abs(vel.x) * 2.0
-        
-        # Tiny fuel taxes to prevent infinite hovering
-        reward -= 0.05  # Time tax
+        # Tiny taxes to prevent infinite hovering, but small enough 
+        # that it doesn't distract the AI from the landing goal.
+        reward -= 0.05  
         reward -= (self.main_engine_power * 0.1)  
 
         # ==========================================
-        # STEP 5: TERMINAL STATE
+        # STEP 3: TERMINAL STATE (The Ground)
         # ==========================================
         if self.game_over:
             terminated = True
             
-            # Did it land perfectly?
-            is_slow = abs(vel.y) < 1.0       
+            # Strict Landing Criteria!
+            # --- THE FIX: Check the speed from a split-second BEFORE the crash! ---
+            is_slow = abs(self.pre_step_vy) < 1.0       
             is_straight = tilt_rad < 0.15    
             is_on_pad = abs(pos.x) < (PAD_WIDTH_METERS / 2.0)
             
             if is_slow and is_straight and is_on_pad:
+                # WIN: Base 1000 + Fuel Bonus ONLY if it lands perfectly!
                 reward += 1000.0 + (self.fuel_left * 2.0)
                 self.landing_status = "LANDED"
             else:
+                # LOSE: Massive Crash Penalty
                 reward -= 500.0
                 self.landing_status = "CRASH"
 
