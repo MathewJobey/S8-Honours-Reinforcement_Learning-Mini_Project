@@ -53,27 +53,22 @@ class Phase3Final(gym.Env):
 
         start_y = self.start_y
         
-        """start_x = self.np_random.uniform(-30.0, 30.0)
-        self.lander.position = (start_x, start_y)
-        self.lander.angle = self.np_random.uniform(-math.pi, math.pi)
-        #4. Pick a random falling speed between a hover (0.0) and terminal velocity (-140.0)
-        # We use negative numbers because the rocket is moving down the Y-axis
-        start_vy = self.np_random.uniform(-50.0, 0.0)
-        self.lander.linearVelocity = (0, start_vy)"""
-        # THE FIX: Spawn perfectly in the center, perfectly upright!
+        # Spawn perfectly in the center, perfectly upright!
         self.lander.position = (0.0, start_y)
         self.lander.angle = 0.0
         
         # Pick a random falling speed
-        start_vy = self.np_random.uniform(-50.0, 0.0)
+        start_vy = self.np_random.uniform(-80.0, 0.0)
         self.lander.linearVelocity = (0, start_vy)
         
         # Ensure it is not spinning when it spawns
         self.lander.angularVelocity = 0.0
         
         self.prev_y = self.lander.worldCenter.y
+        self.impact_speed = None  # <--- THE CRASH MEMORY RESET!
 
-        return self.step(np.array([0, 0, 0]))[0], {}     
+        state = self._get_state()
+        return np.array(state, dtype=np.float32), {}
     
     """APPLY FORCES BASED ON THE ACTIONS TAKEN BY THE AGENT. THIS INCLUDES MAIN ENGINE THRUST, SIDE THRUSTERS, AND AERODYNAMIC DRAG."""
     def _apply_forces(self, main_power, center_power, nose_power):
@@ -132,9 +127,8 @@ class Phase3Final(gym.Env):
     """THE STEP FUNCTION TO ADVANCE THE ENVIRONMENT BY ONE TIME STEP. THIS IS CALLED AT EVERY TIME STEP OF THE EPISODE."""
     def step(self, action):
         action = np.clip(action, -1, 1) 
-        main_engine_power = np.clip(action[0], -1.0, 1.0)
-        #center_side_power = np.clip(action[1], -1.0, 1.0)
-        #nose_side_power = np.clip(action[2], -1.0, 1.0)
+        old_potential = self._landing_potential()
+        main_engine_power = np.clip(action[0], 0.0, 1.0)
         
         center_side_power = 0.0
         nose_side_power = 0.0
@@ -150,26 +144,46 @@ class Phase3Final(gym.Env):
         
         vel = self.lander.linearVelocity
         self.pre_step_velocity = math.sqrt(vel.x**2 + vel.y**2)
+        
+        # --- NEW: Step 1 Snapshot (Before Physics) ---
+        pre_physics_vy = vel.y
+        
         self.pre_step_vy = vel.y
         self.prev_y = self.lander.worldCenter.y
         
         self._apply_forces(main_engine_power, center_side_power, nose_side_power)
+        
+        # The engine moves the rocket here!
         self.world.Step(1.0 / FPS, 6, 2)
+        new_potential = self._landing_potential()
+
+        # --- NEW: Step 2 Snapshot (After Physics) ---
+        post_physics_vy = self.lander.linearVelocity.y
+        
+        # --- NEW: Step 3 The Math Check ---
+        if abs(post_physics_vy - pre_physics_vy) > 3.0:
+            self.game_over = True
+            # Save the true falling speed only if it hasn't been saved yet
+            if getattr(self, 'impact_speed', None) is None:
+                self.impact_speed = pre_physics_vy
+                
+        # Catch any normal game_overs and save the safe speed
+        if self.game_over and getattr(self, 'impact_speed', None) is None:
+            self.impact_speed = pre_physics_vy
 
         # --- FIX 2: STEERING FUEL COST ---
         if main_engine_power > 0:
             self.fuel_left -= (FUEL_CONSUMPTION_RATE / FPS) * main_engine_power
+        self.fuel_left = max(0.0, self.fuel_left)
             
-        # Added fuel consumption for center side thrusters, at 50% the rate of the main engine since they are smaller and less powerful
         if abs(center_side_power) > 0:
-            self.fuel_left -= (FUEL_CONSUMPTION_RATE / FPS) * abs(center_side_power) * 0.5
+            self.fuel_left -= (FUEL_CONSUMPTION_RATE / FPS) * abs(center_side_power) * 0.2
             
-        # Added fuel consumption for nose thrusters, also at 50% the rate of the main engine
         if abs(nose_side_power) > 0:
-            self.fuel_left -= (FUEL_CONSUMPTION_RATE / FPS) * abs(nose_side_power) * 0.3
+            self.fuel_left -= (FUEL_CONSUMPTION_RATE / FPS) * abs(nose_side_power) * 0.1
 
         state = self._get_state()
-        reward, terminated, truncated = self._compute_reward(state)
+        reward, terminated, truncated = self._compute_reward(state, old_potential, new_potential)
         return np.array(state, dtype=np.float32), reward, terminated, truncated, {}
     
     """NORMALIZATION OF THE OBSERVATION SPACE. THIS FUNCTION TAKES THE RAW PHYSICS DATA AND SCALES IT TO A RANGE THAT IS EASIER FOR THE AI TO LEARN FROM. THIS INCLUDES NORMALIZING POSITION, VELOCITY, ANGLE, AND FUEL LEVEL."""
@@ -188,19 +202,38 @@ class Phase3Final(gym.Env):
             pos.y / self.max_altitude,      # 2. Vertical Position (0 to 1)
             vel.x / 150.0,                  # 3. Horizontal Velocity 
             vel.y / 150.0,                  # 4. Vertical Velocity
-            norm_angle,                     # 5. Angle
+            
+            # --- THE TINY TWEAK ---
+            norm_angle / math.pi,           # 5. Angle (-1 to 1) 
+            
             self.lander.angularVelocity/6.0,# 6. Angular Velocity
             self.fuel_left / INITIAL_FUEL   # 7. Fuel
         ]
-        
-    """REWARD FUNCTION TO CALCULATE THE REWARD FOR THE CURRENT STATE. THIS FUNCTION TAKES INTO ACCOUNT THE DISTANCE TO THE LANDING PAD, THE VELOCITY, THE ANGLE, AND THE FUEL LEFT TO COMPUTE A COMPREHENSIVE REWARD SIGNAL THAT ENCOURAGES SAFE AND EFFICIENT LANDINGS."""   
-    def _compute_reward(self, state):
-        reward = 0.0
-        terminated = False 
-        truncated = False
-        
+    def _landing_potential(self):
         pos = self.lander.worldCenter
         vel = self.lander.linearVelocity
+        angle = (self.lander.angle + math.pi) % (2 * math.pi) - math.pi
+
+        potential = (
+        -abs(pos.x) * 2.0
+        -abs(vel.x) * 1.0
+        -abs(vel.y) * 0.5
+        -abs(angle) * 3.0
+        -pos.y * 0.1
+        )
+        return potential
+    
+    """REWARD FUNCTION TO CALCULATE THE REWARD FOR THE CURRENT STATE. THIS FUNCTION TAKES INTO ACCOUNT THE DISTANCE TO THE LANDING PAD, THE VELOCITY, THE ANGLE, AND THE FUEL LEFT TO COMPUTE A COMPREHENSIVE REWARD SIGNAL THAT ENCOURAGES SAFE AND EFFICIENT LANDINGS."""   
+    def _compute_reward(self, state, old_potential, new_potential):
+        pos = self.lander.worldCenter
+        vel = self.lander.linearVelocity
+
+        reward = new_potential - old_potential
+        reward += (self.prev_y - pos.y) * 0.5
+        reward += -vel.y * 0.5
+
+        terminated = False
+        truncated = False
         
         norm_angle = (self.lander.angle + math.pi) % (2 * math.pi) - math.pi
         tilt_rad = abs(norm_angle)
@@ -216,28 +249,25 @@ class Phase3Final(gym.Env):
         else:
             self.landing_status = "IN_PROGRESS"
             
-        # THE NEW CODE: Compare current Y to previous Y!
-        if pos.y >= self.prev_y:
-            # If it hovers or climbs, it loses 10 points per frame!
-            reward -= 10.0
-
         # ==========================================
         # STEP 2: FUEL & TIME TAX
         # ==========================================
         # Tiny taxes to prevent infinite hovering, but small enough 
         # that it doesn't distract the AI from the landing goal.
-        reward -= 0.05  
-        reward -= (self.main_engine_power * 0.1)  
-
+        reward -= 0.1
+        reward -= self.main_engine_power * 0.03
         # ==========================================
         # STEP 3: TERMINAL STATE (The Ground)
         # ==========================================
         if self.game_over:
             terminated = True
             
-            # Strict Landing Criteria!
-            # --- THE FIX: Check the speed from a split-second BEFORE the crash! ---
-            is_slow = abs(self.pre_step_vy) < 1.0       
+            # --- THE FINAL FIX: Look at the secret gradebook! ---
+            impact = getattr(self, 'impact_speed', 0.0)
+            if impact is None: 
+                impact = 0.0
+            
+            is_slow = abs(impact) < 1.0       
             is_straight = tilt_rad < 0.15    
             is_on_pad = abs(pos.x) < (PAD_WIDTH_METERS / 2.0)
             
@@ -299,13 +329,12 @@ class Phase3Final(gym.Env):
         initial_x = 0
         initial_y = self.start_y
         
-        # 1. Compound Body: Main Hull (90kg) + Nose Cone (10kg) = 100kg Total
+        # 1. Single Body: Perfectly stable 100kg rectangular box!
         self.lander = self.world.CreateDynamicBody(
             position=(initial_x, initial_y),
             angle=0.0,
             fixtures=[
-                
-                # FIXTURE 1: The Heavy Main Hull
+                # FIXTURE 1: The Main Hull (No nose cone physics!)
                 fixtureDef(
                     shape=polygonShape(vertices=[
                         (-ROCKET_H_WIDTH, 0), 
@@ -313,25 +342,11 @@ class Phase3Final(gym.Env):
                         (ROCKET_H_WIDTH, ROCKET_HEIGHT), 
                         (-ROCKET_H_WIDTH, ROCKET_HEIGHT)
                     ]),
-                    density=5.0, friction=0.5, categoryBits=0x0010, maskBits=0x001, restitution=0.0
-                ),
-                
-                # FIXTURE 2: The Lightweight Nose Cone
-                fixtureDef(
-                    shape=polygonShape(vertices=[
-                        (-ROCKET_H_WIDTH, ROCKET_HEIGHT),    # Bottom Left of nose
-                        (ROCKET_H_WIDTH, ROCKET_HEIGHT),     # Bottom Right of nose
-                        (0, ROCKET_HEIGHT + NOSE_HEIGHT)     # Top Center Tip
-                    ]),
-                    # Density is lighter because the cone is mostly empty space!
-                    density=(10.0 / 2.25), friction=0.5, categoryBits=0x0010, maskBits=0x001, restitution=0.0
+                    # Density of 5.55 across this box equals exactly 100kg!
+                    density=5.55, friction=0.5, categoryBits=0x0010, maskBits=0x001, restitution=0.0
                 )
             ]
         )
         self.lander.color1 = LANDER_COLOR
-        
-        # --- ADD A NAME TAG ---
         self.lander.userData = "rocket"
-        
-        # Set drawlist to only include the main hull
         self.drawlist = [self.lander]
