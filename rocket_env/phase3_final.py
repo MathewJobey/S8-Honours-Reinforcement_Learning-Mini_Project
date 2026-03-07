@@ -52,13 +52,24 @@ class Phase3Final(gym.Env):
         self._create_rocket()
 
         start_y = self.start_y
-        start_x = self.np_random.uniform(-30.0, 30.0)
+        
+        """start_x = self.np_random.uniform(-30.0, 30.0)
         self.lander.position = (start_x, start_y)
         self.lander.angle = self.np_random.uniform(-math.pi, math.pi)
         #4. Pick a random falling speed between a hover (0.0) and terminal velocity (-140.0)
         # We use negative numbers because the rocket is moving down the Y-axis
         start_vy = self.np_random.uniform(-50.0, 0.0)
+        self.lander.linearVelocity = (0, start_vy)"""
+        # THE FIX: Spawn perfectly in the center, perfectly upright!
+        self.lander.position = (0.0, start_y)
+        self.lander.angle = 0.0
+        
+        # Pick a random falling speed
+        start_vy = self.np_random.uniform(-50.0, 0.0)
         self.lander.linearVelocity = (0, start_vy)
+        
+        # Ensure it is not spinning when it spawns
+        self.lander.angularVelocity = 0.0
 
         return self.step(np.array([0, 0, 0]))[0], {}     
     
@@ -112,26 +123,19 @@ class Phase3Final(gym.Env):
             drag_x = -(vel.x / speed) * drag_magnitude
             drag_y = -(vel.y / speed) * drag_magnitude
             
-            # --- THE FIX: The True Center of Pressure ---
-            # Get the exact mathematical Center of Mass in local coordinates
-            true_com_y = self.lander.localCenter.y
-            
-            # Push EXACTLY 1.0 meter above the true Center of Mass. 
-            # This creates a realistic "weathervane" torque that tries to flip the 
-            # rocket, but is weak enough that the AI's nose thrusters can fight it!
-            offset_y = true_com_y + 1.0 
-            
-            # Translate that local spot into global Box2D coordinates
-            drag_point = self.lander.GetWorldPoint(localPoint=(0, offset_y))
-            
-            self.lander.ApplyForce((drag_x, drag_y), drag_point, wake=True)
+            # --- THE FIX: Apply drag perfectly to the middle! ---
+            # This slows the rocket down without causing any artificial spinning
+            self.lander.ApplyForceToCenter((drag_x, drag_y), wake=True)
     
     """THE STEP FUNCTION TO ADVANCE THE ENVIRONMENT BY ONE TIME STEP. THIS IS CALLED AT EVERY TIME STEP OF THE EPISODE."""
     def step(self, action):
         action = np.clip(action, -1, 1) 
         main_engine_power = np.clip(action[0], 0.0, 1.0)
-        center_side_power = np.clip(action[1], -1.0, 1.0)
-        nose_side_power = np.clip(action[2], -1.0, 1.0)
+        #center_side_power = np.clip(action[1], -1.0, 1.0)
+        #nose_side_power = np.clip(action[2], -1.0, 1.0)
+        
+        center_side_power = 0.0
+        nose_side_power = 0.0
         
         if self.fuel_left <= 0:
             main_engine_power = 0
@@ -191,9 +195,11 @@ class Phase3Final(gym.Env):
         terminated = False 
         truncated = False
         
-        pos = self.lander.position
+        # THE FIX: The reward magnets must also track the Center of Mass!
+        pos = self.lander.worldCenter
         vel = self.lander.linearVelocity
         
+        # Standardize the angle
         norm_angle = (self.lander.angle + math.pi) % (2 * math.pi) - math.pi
         tilt_rad = abs(norm_angle)
         x_range = VIEWPORT_W / SCALE / 2
@@ -208,10 +214,12 @@ class Phase3Final(gym.Env):
         # ==========================================
         # STEP 2: POSTURE & RADAR (The Magnets)
         # ==========================================
-        # Posture Magnet (Trains Nose)
-        posture_reward = math.exp(-tilt_rad * 10.0)
+        # THE FIX: Changed from * 10.0 to * 5.0 to soften the panic!
+        posture_reward = math.exp(-tilt_rad * 5.0)
         reward += posture_reward * 10.0
-        reward -= abs(self.lander.angularVelocity) * 10.0
+        
+        # THE FIX: Doubled the spin penalty to kill the wiggling!
+        reward -= abs(self.lander.angularVelocity) * 20.0
 
         # Centering Magnet (Trains Side Thrusters)
         center_reward = math.exp(-abs(pos.x))
@@ -221,47 +229,45 @@ class Phase3Final(gym.Env):
         # ==========================================
         # STEP 3: GLIDE SLOPE (The Main Engine Trainer)
         # ==========================================
-        # Create a smooth braking curve using the square root of the altitude!
-        # The max(1.0, ...) ensures the speed limit never drops below 1 m/s at the very end
-        target_speed = -max(1.0, math.sqrt(max(0.0, pos.y)))
+        # THE FIX: Because the Center of Mass is 5.5 meters above the engine, 
+        # we subtract 5.5 from pos.y so the speed limit properly reaches 0 at the ground!
+        true_altitude = max(0.0, pos.y - 5.5)
+        target_speed = -max(1.0, math.sqrt(true_altitude))
         
         # If it falls faster than the target speed, apply a heavy penalty!
         if vel.y < target_speed:
             speed_violation = abs(vel.y - target_speed)
             reward -= speed_violation * 2.0
-
+            
+        # ... Keep your Fuel Taxes and Terminal State exactly the same below this! ...
         # ==========================================
-        # STEP 4: FUEL EFFICIENCY (Gentle Taxes)
+        # STEP 4: THE BRAKES & EFFICIENCY
         # ==========================================
-        # A tiny time tax ensures it doesn't hover perfectly to farm points
-        reward -= 0.05 
+        # Heavy penalty for spinning (This kills the wiggling!)
+        reward -= abs(self.lander.angularVelocity) * 10.0
         
-        # Gentle fuel taxes so it learns to tap, not hold
+        # Penalty for sliding sideways
+        reward -= abs(vel.x) * 2.0
+        
+        # Tiny fuel taxes to prevent infinite hovering
+        reward -= 0.05  # Time tax
         reward -= (self.main_engine_power * 0.1)  
-        reward -= abs(self.center_side_power) * 0.05
-        reward -= abs(self.nose_side_power) * 0.05
 
         # ==========================================
-        # STEP 5: TERMINAL STATE (The Jackpot)
+        # STEP 5: TERMINAL STATE
         # ==========================================
         if self.game_over:
             terminated = True
             
-            # Strict Landing Criteria!
-            is_slow = abs(vel.y) < 1.0       # Must be under 1 m/s vertical speed!
-            is_straight = tilt_rad < 0.15    # Almost perfectly straight
-            
-            # For the pad check, we pull the physical width from your settings
-            pad_half_width = PAD_WIDTH_METERS / 2.0
-            is_on_pad = abs(pos.x) < pad_half_width
+            # Did it land perfectly?
+            is_slow = abs(vel.y) < 1.0       
+            is_straight = tilt_rad < 0.15    
+            is_on_pad = abs(pos.x) < (PAD_WIDTH_METERS / 2.0)
             
             if is_slow and is_straight and is_on_pad:
-                # WIN: Base 1000 + Fuel Efficiency Jackpot
-                fuel_bonus = self.fuel_left * 2.0
-                reward += 1000.0 + fuel_bonus
+                reward += 1000.0 + (self.fuel_left * 2.0)
                 self.landing_status = "LANDED"
             else:
-                # LOSE: Massive Crash Penalty
                 reward -= 500.0
                 self.landing_status = "CRASH"
 
