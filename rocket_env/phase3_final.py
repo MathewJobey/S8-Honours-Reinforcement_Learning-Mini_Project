@@ -257,16 +257,17 @@ class Phase3Final(gym.Env):
         reward -= abs(vel.x) * 0.1
         
         # 3. Posture Score (Keep it pointed up!)
-        # THE FIX: 0.087 radians is exactly 5 degrees. 
-        if tilt_rad < 0.087:
-            reward -= tilt_rad * 1.0  # Gentle correction for tiny wobbles
+        # THE FIX: Restored to 0.52 radians (30 degrees) to allow the belly-flop
+        if tilt_rad < 0.52:
+            reward -= tilt_rad * 1.0  # Gentle correction
         else:
-            reward -= tilt_rad * 5.0  # Heavy penalty for tilting more than 5 degrees
+            reward -= tilt_rad * 5.0  # Heavy penalty for doing flips
         
         # 4. THE CONTINUOUS GLIDE SLOPE
         # Calculates the ideal fall speed for its current exact height
         ideal_vy = -math.sqrt(max(0.0, pos.y)) * 2.0
         
+        # THE FIX: Removed the duplicate copy-paste of this block!
         # If the rocket is falling FASTER than the ideal curve, bleed points
         if vel.y < ideal_vy:
             speed_error = ideal_vy - vel.y 
@@ -284,7 +285,8 @@ class Phase3Final(gym.Env):
             impact_v = abs(impact)
             
             # Check if it hit the target zone
-            is_straight = tilt_rad < 0.35      # Must be within ~20 degrees of perfect vertical
+            # THE FIX: Set to 0.087 radians (5 degrees) for a strict but fair landing!
+            is_straight = tilt_rad < 0.087      
             is_on_pad = abs(pos.x) < (PAD_WIDTH_METERS / 2.0)
             
             if is_straight and is_on_pad:
@@ -296,7 +298,6 @@ class Phase3Final(gym.Env):
                 reward += touchdown_bonus
                 
                 # Multiply the leftover fuel by the speed multiplier too!
-                # This acts exactly like the "time left" bonus in the code you found.
                 fuel_bonus = self.fuel_left * 2.0 * speed_multiplier
                 reward += fuel_bonus
                 
