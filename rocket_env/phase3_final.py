@@ -53,9 +53,13 @@ class Phase3Final(gym.Env):
 
         start_y = self.start_y
         
-        # Spawn perfectly in the center, perfectly upright!
-        self.lander.position = (0.0, start_y)
-        self.lander.angle = 0.0
+        # --- THE FIX: DOMAIN RANDOMIZATION ---
+        # 1. Pick a random X position between -30 and 30
+        start_x = self.np_random.uniform(-30.0, 30.0)
+        self.lander.position = (start_x, start_y)
+        
+        # 2. Pick a random angle between -180 degrees (-pi) and +180 degrees (+pi)
+        self.lander.angle = self.np_random.uniform(-math.pi, math.pi)
         
         # Pick a random falling speed
         start_vy = self.np_random.uniform(-80.0, 0.0)
@@ -127,17 +131,13 @@ class Phase3Final(gym.Env):
     """THE STEP FUNCTION TO ADVANCE THE ENVIRONMENT BY ONE TIME STEP. THIS IS CALLED AT EVERY TIME STEP OF THE EPISODE."""
     def step(self, action):
         action = np.clip(action, -1, 1) 
-        old_potential = self._landing_potential()
         main_engine_power = np.clip(action[0], 0.0, 1.0)
-        
-        center_side_power = 0.0
-        nose_side_power = 0.0
-        
+        center_side_power = np.clip(action[1], -1.0, 1.0)
+        nose_side_power = np.clip(action[2], -1.0, 1.0)
         if self.fuel_left <= 0:
             main_engine_power = 0
             center_side_power = 0
-            nose_side_power = 0
-            
+            nose_side_power = 0   
         self.main_engine_power = main_engine_power
         self.center_side_power = center_side_power
         self.nose_side_power = nose_side_power
@@ -145,33 +145,25 @@ class Phase3Final(gym.Env):
         vel = self.lander.linearVelocity
         self.pre_step_velocity = math.sqrt(vel.x**2 + vel.y**2)
         
-        # --- NEW: Step 1 Snapshot (Before Physics) ---
         pre_physics_vy = vel.y
-        
         self.pre_step_vy = vel.y
         self.prev_y = self.lander.worldCenter.y
         
         self._apply_forces(main_engine_power, center_side_power, nose_side_power)
-        
-        # The engine moves the rocket here!
         self.world.Step(1.0 / FPS, 6, 2)
-        new_potential = self._landing_potential()
 
-        # --- NEW: Step 2 Snapshot (After Physics) ---
         post_physics_vy = self.lander.linearVelocity.y
         
-        # --- NEW: Step 3 The Math Check ---
+        # The G-Force Check
         if abs(post_physics_vy - pre_physics_vy) > 3.0:
             self.game_over = True
-            # Save the true falling speed only if it hasn't been saved yet
             if getattr(self, 'impact_speed', None) is None:
                 self.impact_speed = pre_physics_vy
                 
-        # Catch any normal game_overs and save the safe speed
         if self.game_over and getattr(self, 'impact_speed', None) is None:
             self.impact_speed = pre_physics_vy
 
-        # --- FIX 2: STEERING FUEL COST ---
+        # Fuel Costs
         if main_engine_power > 0:
             self.fuel_left -= (FUEL_CONSUMPTION_RATE / FPS) * main_engine_power
         self.fuel_left = max(0.0, self.fuel_left)
@@ -183,7 +175,9 @@ class Phase3Final(gym.Env):
             self.fuel_left -= (FUEL_CONSUMPTION_RATE / FPS) * abs(nose_side_power) * 0.1
 
         state = self._get_state()
-        reward, terminated, truncated = self._compute_reward(state, old_potential, new_potential)
+        
+        # --- THE FIX 2: Compute reward without potentials ---
+        reward, terminated, truncated = self._compute_reward(state)
         return np.array(state, dtype=np.float32), reward, terminated, truncated, {}
     
     """NORMALIZATION OF THE OBSERVATION SPACE. THIS FUNCTION TAKES THE RAW PHYSICS DATA AND SCALES IT TO A RANGE THAT IS EASIER FOR THE AI TO LEARN FROM. THIS INCLUDES NORMALIZING POSITION, VELOCITY, ANGLE, AND FUEL LEVEL."""
@@ -209,29 +203,13 @@ class Phase3Final(gym.Env):
             self.lander.angularVelocity/6.0,# 6. Angular Velocity
             self.fuel_left / INITIAL_FUEL   # 7. Fuel
         ]
-    def _landing_potential(self):
-        pos = self.lander.worldCenter
-        vel = self.lander.linearVelocity
-        angle = (self.lander.angle + math.pi) % (2 * math.pi) - math.pi
-
-        potential = (
-        -abs(pos.x) * 2.0
-        -abs(vel.x) * 1.0
-        -abs(vel.y) * 0.5
-        -abs(angle) * 3.0
-        -pos.y * 0.1
-        )
-        return potential
     
     """REWARD FUNCTION TO CALCULATE THE REWARD FOR THE CURRENT STATE. THIS FUNCTION TAKES INTO ACCOUNT THE DISTANCE TO THE LANDING PAD, THE VELOCITY, THE ANGLE, AND THE FUEL LEFT TO COMPUTE A COMPREHENSIVE REWARD SIGNAL THAT ENCOURAGES SAFE AND EFFICIENT LANDINGS."""   
-    def _compute_reward(self, state, old_potential, new_potential):
+    def _compute_reward(self, state):
         pos = self.lander.worldCenter
         vel = self.lander.linearVelocity
 
-        reward = new_potential - old_potential
-        reward += (self.prev_y - pos.y) * 0.5
-        reward += -vel.y * 0.5
-
+        reward = 0.0
         terminated = False
         truncated = False
         
@@ -240,44 +218,87 @@ class Phase3Final(gym.Env):
         x_range = VIEWPORT_W / SCALE / 2
 
         # ==========================================
-        # STEP 1: THE BLEEDING BOUNDARY & ANTI-HOVER
+        # STEP 1: THE KILL SWITCHES (Out of Bounds & Anti-Climb)
         # ==========================================
-        if abs(pos.x) >= x_range or pos.y > self.max_altitude:
-            # Massive 50-point penalty per frame stops the AI from flying up!
-            reward -= 50.0
+        is_out_of_bounds = abs(pos.x) >= x_range or pos.y > self.max_altitude
+        
+        # --- THE NEW FIX: The Anti-Climb Sensor ---
+        is_climbing = vel.y > 0.1 
+
+        if is_out_of_bounds or is_climbing:
+            # Massive penalty and instant death!
+            reward -= 1000.0
+            terminated = True 
             self.landing_status = "OUT_OF_BOUNDS"
+            return reward, terminated, truncated
         else:
             self.landing_status = "IN_PROGRESS"
             
         # ==========================================
-        # STEP 2: FUEL & TIME TAX
+        # STEP 2: DENSE PENALTIES & GUIDANCE
         # ==========================================
-        # Tiny taxes to prevent infinite hovering, but small enough 
-        # that it doesn't distract the AI from the landing goal.
-        reward -= 0.1
-        reward -= self.main_engine_power * 0.03
-        # ==========================================
+        # 1. Time & Fuel tax
+        reward -= 0.5 
+        reward -= self.main_engine_power * 0.1
+        reward -= abs(self.center_side_power) * 0.05
+        reward -= abs(self.nose_side_power) * 0.05
+        
+        # 2. THE BREADCRUMB TRAIL (Guidance System)
+        reward -= tilt_rad * 2.0
+        
+        # NEW FIX: The Compass! Punish the AI slightly for being far away from the center X=0.
+        # This creates a gravity-like pull, drawing the AI perfectly to the landing pad!
+        reward -= abs(pos.x) * 0.1 
+        
+        # NEW FIX: Lower the velocity penalty! We want it to be allowed to drift sideways to reach the pad.
+        reward -= abs(vel.x) * 0.1 
+        
+        # 3. SUICIDE BURN SPEED LIMITS (The Speeding Tickets!)
+        # Reverted back to penalties (-=). If it falls too fast, it bleeds points!
+        if pos.y < 20.0 and vel.y < -10.0:
+            reward -= 5.0  
+            
+        if pos.y < 10.0 and vel.y < -5.0:
+            reward -= 10.0  
+            
+        if pos.y < 5.0 and vel.y < -2.0:
+            reward -= 20.0
+            
+       # ==========================================
         # STEP 3: TERMINAL STATE (The Ground)
         # ==========================================
         if self.game_over:
             terminated = True
             
-            # --- THE FINAL FIX: Look at the secret gradebook! ---
             impact = getattr(self, 'impact_speed', 0.0)
             if impact is None: 
                 impact = 0.0
             
-            is_slow = abs(impact) < 1.0       
-            is_straight = tilt_rad < 0.15    
+            is_slow = abs(impact) < 2.0       # Slightly more forgiving speed
+            is_straight = tilt_rad < 0.2      # Slightly more forgiving angle
             is_on_pad = abs(pos.x) < (PAD_WIDTH_METERS / 2.0)
             
+            # --- THE FIX: Partial Credit System! ---
+            # Reward it for individual skills even if it fails the others
+            
+            if is_slow:
+                reward += 500.0  # Good job using the brakes!
+            else:
+                reward -= 500.0  # Ouch, you hit the ground too fast!
+                
+            if is_straight:
+                reward += 500.0  # Good job using the nose thrusters!
+                
+            if is_on_pad:
+                reward += 500.0  # Good job steering to the center!
+                
+            # The Final Jackpot
             if is_slow and is_straight and is_on_pad:
-                # WIN: Base 1000 + Fuel Bonus ONLY if it lands perfectly!
-                reward += 1000.0 + (self.fuel_left * 2.0)
+                # WIN! Perfect landing!
+                reward += 1000.0 + (self.fuel_left * 5.0)
                 self.landing_status = "LANDED"
             else:
-                # LOSE: Massive Crash Penalty
-                reward -= 500.0
+                # LOSE!
                 self.landing_status = "CRASH"
 
         return reward, terminated, truncated
