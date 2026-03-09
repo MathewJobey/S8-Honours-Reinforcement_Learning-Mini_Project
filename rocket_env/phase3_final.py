@@ -265,7 +265,7 @@ class Phase3Final(gym.Env):
         
         # 4. THE CONTINUOUS GLIDE SLOPE
         # Calculates the ideal fall speed for its current exact height
-        ideal_vy = -math.sqrt(max(0.0, pos.y)) * 2.0
+        ideal_vy = -math.sqrt(max(0.0, pos.y)) * 4.0
         
         # THE FIX: Removed the duplicate copy-paste of this block!
         # If the rocket is falling FASTER than the ideal curve, bleed points
@@ -296,7 +296,13 @@ class Phase3Final(gym.Env):
                 # Multiply the jackpot by how soft the landing was
                 touchdown_bonus = 1000.0 * speed_multiplier
                 reward += touchdown_bonus
-                
+            
+                """# THE NEW FIX: The Bullseye Bonus!
+                # 1.0 = Dead center, 0.0 = Literal edge of the pad
+                accuracy_multiplier = 1.0 - (abs(pos.x) / (PAD_WIDTH_METERS / 2.0))
+                bullseye_bonus = 300.0 * accuracy_multiplier
+                reward += bullseye_bonus"""
+                                
                 # Multiply the leftover fuel by the speed multiplier too!
                 fuel_bonus = self.fuel_left * 2.0 * speed_multiplier
                 reward += fuel_bonus
