@@ -305,7 +305,7 @@ class RocketVisualizer:
         
         # White Text for visibility against Sky
         texts = [
-            f"Altitude: {pos.y:.1f} m",
+            f"Altitude: {max(0.0, pos.y - 1.0):.1f} m",
             # THE FIX 2: Removed abs() so we can see negative speeds (Left/Down)
             f"X Vel: {vel.x:.1f} m/s",
             f"Y Vel: {vel.y:.1f} m/s",

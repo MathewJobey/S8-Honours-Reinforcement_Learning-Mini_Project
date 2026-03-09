@@ -216,8 +216,14 @@ class Phase3Final(gym.Env):
     
     """REWARD FUNCTION TO CALCULATE THE REWARD FOR THE CURRENT STATE. THIS FUNCTION TAKES INTO ACCOUNT THE DISTANCE TO THE LANDING PAD, THE VELOCITY, THE ANGLE, AND THE FUEL LEFT TO COMPUTE A COMPREHENSIVE REWARD SIGNAL THAT ENCOURAGES SAFE AND EFFICIENT LANDINGS."""   
     def _compute_reward(self, state):
+        # We still use worldCenter for X/Y balancing and distance penalties
         pos = self.lander.worldCenter
         vel = self.lander.linearVelocity
+        
+        # THE FIX: Calculate the laser-accurate distance to the concrete!
+        # self.lander.position.y is the absolute bottom of the rocket.
+        # We subtract 1.0 because the landing pad itself is 1 meter tall.
+        true_altitude = self.lander.position.y - 1.0
 
         reward = 0.0
         terminated = False
@@ -232,7 +238,6 @@ class Phase3Final(gym.Env):
         # ==========================================
         is_out_of_bounds = abs(pos.x) >= x_range or pos.y > self.max_altitude
         
-        # Allow it to bounce up to 2.0 m/s. This gives it breathing room to learn the brakes!
         is_climbing = vel.y > 2.0 
 
         if is_out_of_bounds or is_climbing:
@@ -246,29 +251,32 @@ class Phase3Final(gym.Env):
         # ==========================================
         # STEP 2: DENSE PENALTIES (Distance, Posture, Glide Slope)
         # ==========================================
-        # 1. Fuel & Time tax (Prevents infinite hovering)
+        # 1. Fuel & Time tax
         reward -= 0.5 
         reward -= self.main_engine_power * 0.1
         reward -= abs(self.center_side_power) * 0.05
         reward -= abs(self.nose_side_power) * 0.05
         
-        # 2. Distance Score (Pulls it to the center pad)
+        # 2. Distance Score
         reward -= abs(pos.x) * 0.1 
         reward -= abs(vel.x) * 0.1
         
         # 3. Posture Score (Keep it pointed up!)
-        # THE FIX: Restored to 0.52 radians (30 degrees) to allow the belly-flop
-        if tilt_rad < 0.52:
-            reward -= tilt_rad * 1.0  # Gentle correction
+        # THE FIX: Now using true_altitude for the 20-meter Death Grip!
+        if true_altitude < 20.0:
+            reward -= tilt_rad * 20.0 
+        elif tilt_rad < 0.52:
+            reward -= tilt_rad * 1.0  
         else:
-            reward -= tilt_rad * 5.0  # Heavy penalty for doing flips
+            reward -= tilt_rad * 5.0  
         
         # 4. THE CONTINUOUS GLIDE SLOPE
-        # Calculates the ideal fall speed for its current exact height
-        ideal_vy = -math.sqrt(max(0.0, pos.y)) * 4.0
+        # THE FIX: Now using true_altitude for the 10-meter Hover Flare!
+        if true_altitude < 10.0:
+            ideal_vy = -math.sqrt(max(0.0, true_altitude)) * 1.5 
+        else:
+            ideal_vy = -math.sqrt(max(0.0, true_altitude)) * 4.0
         
-        # THE FIX: Removed the duplicate copy-paste of this block!
-        # If the rocket is falling FASTER than the ideal curve, bleed points
         if vel.y < ideal_vy:
             speed_error = ideal_vy - vel.y 
             reward -= speed_error * 0.5
@@ -276,6 +284,7 @@ class Phase3Final(gym.Env):
        #==========================================
         # STEP 3: THE EXPONENTIAL TOUCHDOWN BONUS
         # ==========================================
+        # (The rest of your Touchdown block remains exactly the same!)
         if self.game_over:
             terminated = True
             
@@ -285,35 +294,27 @@ class Phase3Final(gym.Env):
             impact_v = abs(impact)
             
             # Check if it hit the target zone
-            # THE FIX: Set to 0.087 radians (5 degrees) for a strict but fair landing!
             is_straight = tilt_rad < 0.087      
             is_on_pad = abs(pos.x) < (PAD_WIDTH_METERS / 2.0)
             
             if is_straight and is_on_pad:
-                # The Exponential Math Trick! 
-                speed_multiplier = math.exp(-impact_v / 10.0)
+                speed_multiplier = math.exp(-impact_v / 2.0)
                 
-                # Multiply the jackpot by how soft the landing was
                 touchdown_bonus = 1000.0 * speed_multiplier
                 reward += touchdown_bonus
             
-                """# THE NEW FIX: The Bullseye Bonus!
-                # 1.0 = Dead center, 0.0 = Literal edge of the pad
                 accuracy_multiplier = 1.0 - (abs(pos.x) / (PAD_WIDTH_METERS / 2.0))
                 bullseye_bonus = 300.0 * accuracy_multiplier
-                reward += bullseye_bonus"""
+                reward += bullseye_bonus
                                 
-                # Multiply the leftover fuel by the speed multiplier too!
                 fuel_bonus = self.fuel_left * 2.0 * speed_multiplier
                 reward += fuel_bonus
                 
-                # Determine final text color for the landing pad lights
                 if impact_v < 3.0:
-                    self.landing_status = "LANDED" # Perfect soft touchdown
+                    self.landing_status = "LANDED" 
                 else:
-                    self.landing_status = "CRASH"  # Hit the pad, but too hard
+                    self.landing_status = "CRASH"  
             else:
-                # Missed the pad entirely or fell over
                 reward -= 500.0
                 self.landing_status = "CRASH"
 
