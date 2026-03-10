@@ -4,6 +4,7 @@ import gymnasium as gym
 from gymnasium import spaces
 import Box2D
 from Box2D.b2 import (edgeShape, fixtureDef, polygonShape, revoluteJointDef)
+from .utils import get_true_altitude
 from .settings import *
 from .physics import ContactDetector
 from .visualizer import RocketVisualizer
@@ -216,15 +217,10 @@ class Phase3Final(gym.Env):
     
     """REWARD FUNCTION TO CALCULATE THE REWARD FOR THE CURRENT STATE. THIS FUNCTION TAKES INTO ACCOUNT THE DISTANCE TO THE LANDING PAD, THE VELOCITY, THE ANGLE, AND THE FUEL LEFT TO COMPUTE A COMPREHENSIVE REWARD SIGNAL THAT ENCOURAGES SAFE AND EFFICIENT LANDINGS."""   
     def _compute_reward(self, state):
-        # We still use worldCenter for X/Y balancing and distance penalties
         pos = self.lander.worldCenter
         vel = self.lander.linearVelocity
-        
-        # THE FIX: Calculate the laser-accurate distance to the concrete!
-        # self.lander.position.y is the absolute bottom of the rocket.
-        # We subtract 1.0 because the landing pad itself is 1 meter tall.
-        true_altitude = self.lander.position.y - 1.0
-
+        true_altitude = get_true_altitude(self.lander, ROCKET_H_WIDTH, ROCKET_HEIGHT)
+    
         reward = 0.0
         terminated = False
         truncated = False
@@ -234,13 +230,23 @@ class Phase3Final(gym.Env):
         x_range = VIEWPORT_W / SCALE / 2
 
         # ==========================================
-        # STEP 1: THE KILL SWITCHES (Out of Bounds & Anti-Climb)
+        # STEP 1: THE KILL SWITCHES (The Four Walls)
         # ==========================================
-        is_out_of_bounds = abs(pos.x) >= x_range or pos.y > self.max_altitude
         
-        is_climbing = vel.y > 2.0 
+        # 1. Did it fly off the left or right side of the screen?
+        is_off_sides = abs(pos.x) >= x_range
+        
+        # 2. Did it fly too high into space?
+        is_above_ceiling = pos.y > self.max_altitude
+        
+        # 3. Did it glitch through the dirt floor? 
+        # (If true_altitude is less than -2.0, it is deep underground)
+        is_below_floor = true_altitude < -2.0 
 
-        if is_out_of_bounds or is_climbing:
+        # 4. Combine them all: If ANY of these are true, it is out of bounds!
+        is_out_of_bounds = is_off_sides or is_above_ceiling or is_below_floor
+
+        if is_out_of_bounds:
             reward -= 1000.0
             terminated = True 
             self.landing_status = "OUT_OF_BOUNDS"
@@ -258,8 +264,15 @@ class Phase3Final(gym.Env):
         reward -= abs(self.nose_side_power) * 0.05
         
         # 2. Distance Score
-        reward -= abs(pos.x) * 0.1 
-        reward -= abs(vel.x) * 0.1
+        # THE FIX: The Invisible Funnel! 
+        if true_altitude < 20.0:
+            # Massive penalty for drifting away from the pad at low altitude!
+            reward -= abs(pos.x) * 10.0 
+            reward -= abs(vel.x) * 10.0
+        else:
+            # Gentle nudges toward the center when high up in the sky
+            reward -= abs(pos.x) * 0.1 
+            reward -= abs(vel.x) * 0.1
         
         # 3. Posture Score (Keep it pointed up!)
         # THE FIX: Now using true_altitude for the 20-meter Death Grip!
@@ -281,28 +294,36 @@ class Phase3Final(gym.Env):
             speed_error = ideal_vy - vel.y 
             reward -= speed_error * 0.5
             
-       #==========================================
+       ## ==========================================
         # STEP 3: THE EXPONENTIAL TOUCHDOWN BONUS
         # ==========================================
-        # (The rest of your Touchdown block remains exactly the same!)
         if self.game_over:
             terminated = True
             
+            # Get the impact speed safely, defaulting to 0.0 if missing
             impact = getattr(self, 'impact_speed', 0.0)
             if impact is None: 
                 impact = 0.0
+            
+            # Use absolute value so we only deal with positive speed numbers
             impact_v = abs(impact)
             
-            # Check if it hit the target zone
+            # 1. The Checks
             is_straight = tilt_rad < 0.087      
             is_on_pad = abs(pos.x) < (PAD_WIDTH_METERS / 2.0)
+            is_safe_speed = impact_v < 3.0
             
-            if is_straight and is_on_pad:
+            # 2. The Safe Landing
+            if is_straight and is_on_pad and is_safe_speed:
+                self.landing_status = "LANDED" 
+                
+                # Calculate speed multiplier
                 speed_multiplier = math.exp(-impact_v / 2.0)
                 
+                # Add bonuses
                 touchdown_bonus = 1000.0 * speed_multiplier
                 reward += touchdown_bonus
-            
+                
                 accuracy_multiplier = 1.0 - (abs(pos.x) / (PAD_WIDTH_METERS / 2.0))
                 bullseye_bonus = 300.0 * accuracy_multiplier
                 reward += bullseye_bonus
@@ -310,13 +331,10 @@ class Phase3Final(gym.Env):
                 fuel_bonus = self.fuel_left * 2.0 * speed_multiplier
                 reward += fuel_bonus
                 
-                if impact_v < 3.0:
-                    self.landing_status = "LANDED" 
-                else:
-                    self.landing_status = "CRASH"  
+            # 3. The Crash
             else:
-                reward -= 500.0
                 self.landing_status = "CRASH"
+                reward -= 500.0
 
         return reward, terminated, truncated
     
