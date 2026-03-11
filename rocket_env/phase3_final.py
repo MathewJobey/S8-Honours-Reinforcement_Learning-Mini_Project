@@ -48,6 +48,9 @@ class Phase3Final(gym.Env):
         self.fuel_left = INITIAL_FUEL
         self.landing_status = "IN_PROGRESS"
         
+        self.step_id = 0
+        self.max_steps = 2000
+        
         self.current_drag = 0.0
         
         self._create_terrain()
@@ -133,6 +136,7 @@ class Phase3Final(gym.Env):
     
     """THE STEP FUNCTION TO ADVANCE THE ENVIRONMENT BY ONE TIME STEP. THIS IS CALLED AT EVERY TIME STEP OF THE EPISODE."""
     def step(self, action):
+        self.step_id += 1
         # 1. Safety First: Ensure the AI's raw slider values never exceed -1.0 to 1.0
         action = np.clip(action, -1.0, 1.0) 
         
@@ -220,162 +224,101 @@ class Phase3Final(gym.Env):
         pos = self.lander.worldCenter
         vel = self.lander.linearVelocity
         true_altitude = get_true_altitude(self.lander, ROCKET_H_WIDTH, ROCKET_HEIGHT)
-    
+
         reward = 0.0
         terminated = False
         truncated = False
-        
-        norm_angle = (self.lander.angle + math.pi) % (2 * math.pi) - math.pi
-        tilt_rad = abs(norm_angle)
-        x_range = VIEWPORT_W / SCALE / 2
 
-        # ==========================================
-        # STEP 1: THE KILL SWITCHES (The Four Walls)
-        # ==========================================
+        # Calculate basic physics values
+        theta = abs((self.lander.angle + math.pi) % (2 * math.pi) - math.pi)
+        v = math.sqrt(vel.x**2 + vel.y**2)
         
-        # 1. Did it fly off the left or right side of the screen?
-        is_off_sides = abs(pos.x) >= x_range
+        # ==========================================
+        # 0. THE EXTREME SPAWN KILL SWITCH
+        # ==========================================
+        max_x = VIEWPORT_W / SCALE / 2
         
-        # 2. Did it fly too high into space?
+        is_off_sides = abs(pos.x) >= max_x
         is_above_ceiling = pos.y > self.max_altitude
-        
-        # 3. Did it glitch through the dirt floor? 
-        # (If true_altitude is less than -2.0, it is deep underground)
         is_below_floor = true_altitude < -2.0 
-
-        # 4. Combine them all: If ANY of these are true, it is out of bounds!
-        is_out_of_bounds = is_off_sides or is_above_ceiling or is_below_floor
-
-        if is_out_of_bounds:
-            reward -= 100.0
-            terminated = True 
+        
+        # If the 100m/s spawn flings it off the map, instantly kill it and penalize!
+        if is_off_sides or is_above_ceiling or is_below_floor:
             self.landing_status = "OUT_OF_BOUNDS"
-            return reward, terminated, truncated
-        else:
-            self.landing_status = "IN_PROGRESS"
-            
-        # ------------------------------------------
-        # STEP 2: THE CONTINUOUS REWARD SHAPING
-        # ------------------------------------------    
+            return -100.0, True, False
         
-        # 1. The Time Tax (The ticking clock)
-        reward -= 0.3
+        # ==========================================
+        # 1. The Distance "Pull" (Dense Reward)
+        # ==========================================
+        max_x = VIEWPORT_W / SCALE / 2
+        max_dist = math.sqrt(max_x**2 + self.max_altitude**2)
         
-        # 2. The Main Engine Tax
-        reward -= self.main_engine_power * 0.2
+        dist_x = abs(pos.x)
+        dist_y = max(0.0, true_altitude)
         
-        # 3. The Side Thruster Tax
-        reward -= abs(self.center_side_power) * 0.02
-        reward -= abs(self.nose_side_power) * 0.01
-        
-        # ------------------------------------------
-        #  2. Distance Points (Using utils.py)
-        # ------------------------------------------
-        old_distance = getattr(self, 'prev_distance', None)
-        dist_points, new_distance = calculate_distance_reward(pos.x, true_altitude, old_distance)
-        reward += dist_points
-        self.prev_distance = new_distance
-        
-        # ------------------------------------------
-        # 3. Posture Points (Using utils.py)
-        # ------------------------------------------
-        old_tilt = getattr(self, 'prev_tilt', None)
-        posture_points, new_tilt = calculate_posture_reward(tilt_rad, old_tilt)
-        reward += posture_points
-        self.prev_tilt = new_tilt
+        dist_norm = min(1.0, math.sqrt(dist_x**2 + dist_y**2) / max_dist)
+        dist_reward = 0.1 * (1.0 - dist_norm)
 
-        # If the rocket is almost perfectly straight, give it a small safe bonus!
-        if new_tilt < 0.05:
-            reward += 0.05
-            
-        # Squaring the tilt makes small wobbles cheap, but big leans incredibly expensive
-        tilt_penalty = (new_tilt ** 2) * 1.0
-        reward -= tilt_penalty
-            
-        # ------------------------------------------
-        # 4. Horizontal Centering Points (Using utils.py)
-        # ------------------------------------------
-        old_x_dist = getattr(self, 'prev_x_dist', None)
-        x_points, new_x_dist = calculate_x_reward(pos.x, old_x_dist)
-        reward += x_points
-        self.prev_x_dist = new_x_dist
-        
-        # ---> THE NEW RULE: The Dead-Center Bonus <---
-        # If the rocket's center of mass is within 0.1 meters of the exact middle, give a small cookie!
-        if new_x_dist < 0.1:
-            reward += 0.05
-        
-        # ---> THE FIX: Exponential X-Drift Penalty <---
-        # Squaring the distance creates a harsh invisible wall if it drifts far from center
-        x_penalty = (new_x_dist ** 2) * 0.2
-        reward -= x_penalty
-            
-        # ------------------------------------------
-        # 5. The Glide Slope (Curve Match + Bonus)
-        # ------------------------------------------
-        
-        # Step 1: Calculate the ideal falling speed for any altitude
-        ideal_vy = -math.sqrt(max(0.0, true_altitude)) * 4.0
-        
-        # Step 2: Calculate the exact difference between current speed and ideal speed
-        # abs() makes sure the difference is a clean positive number
-        speed_difference = abs(ideal_vy - vel.y)
-        
-        # ---> YOUR NEW RULE: The Perfect Speed Bonus <---
-        # Step 3: If the rocket is within 1.0 m/s of the perfect curve, give a cookie!
-        if speed_difference < 1.0:
-            reward += 0.05
-            
-        # Step 4: Are we falling too fast compared to the curve?
-        # Note: Falling speeds are negative, so -10 is less than -4.
-        if vel.y < ideal_vy:
-            speed_error = ideal_vy - vel.y 
-            
-            # Step 5: Apply the exponential speed penalty for meteor-drops
-            speed_penalty = (speed_error ** 2) * 0.2
-            reward -= speed_penalty
-            
         # ==========================================
-        # STEP 3: THE EXPONENTIAL TOUCHDOWN BONUS
+        # 2. The Posture "Rule" (Dense Reward)
+        # ==========================================
+        posture_reward = 0.0
+        
+        # math.pi / 36 is exactly 5 degrees. The ultimate strict zone!
+        tolerance = math.pi / 36
+        
+        if theta <= tolerance:
+            # If it leans 5 degrees or less, it gets a perfect score
+            posture_reward = 0.1
+        else:
+            # Step A: Figure out how much it is leaning beyond the 5 allowed degrees
+            extra_lean = theta - tolerance
+            
+            # Step B: Figure out the maximum possible "wrong" lean (180 degrees minus the 5 allowed)
+            max_wrong_lean = math.pi - tolerance
+            
+            # Step C: Turn that into a percentage (0.0 to 1.0)
+            proportion = extra_lean / max_wrong_lean
+            
+            # Step D: Clamp it to safely stay between 0% and 100%
+            proportion = min(1.0, max(0.0, proportion)) 
+            
+            # Step E: Deduct that percentage from the maximum 0.1 reward
+            posture_reward = 0.1 * (1.0 - proportion)
+
+        # Total Dense Reward for this frame
+        dense_reward = dist_reward + posture_reward
+        reward += dense_reward
+
+        # ==========================================
+        # 3 & 4. The Terminal Rewards (Crash & Jackpot)
         # ==========================================
         
-        # Step 1: Check if the episode is over (collision or touching the pad)
+        # The author's trigger for ending the game
         if getattr(self, 'game_over', False) or true_altitude <= 0.1:
             terminated = True
             
-            # ---> THE FIX: The Ghost Brake Defense <---
-            # Step 2: Grab the real impact speed from the collision detector if it exists,
-            # otherwise fall back to the current velocity.
-            raw_impact = getattr(self, 'impact_speed', None)
-            if raw_impact is None:
-                raw_impact = vel.y
-                
-            impact_v = abs(raw_impact)
+            # The Author's Speed Bonus & Time Variables
+            time_remaining = max(0, self.max_steps - self.step_id)
+            speed_bonus = 5.0 * math.exp(-v / 10.0)
             
-            # Step 3: The Strict Survival Checks
-            is_straight = new_tilt < 0.087      
-            is_on_pad = new_x_dist < (PAD_WIDTH_METERS / 2.0)
-            is_safe_speed = impact_v < 3.0
+            # The Author's strict landing conditions
+            is_straight = theta <= (math.pi / 36)             # Under 5 degrees
+            is_on_pad = dist_x < (PAD_WIDTH_METERS / 2.0)    # Inside pad bounds
+            is_safe_speed = v < 5.0                         # Under 5 m/s
             
-            # Step 4: Calculate the Winning Bonuses
             if is_straight and is_on_pad and is_safe_speed:
-                self.landing_status = "LANDED" 
-                
-                speed_multiplier = math.exp(-impact_v / 2.0)
-                touchdown_bonus = 100.0 * speed_multiplier
-                reward += touchdown_bonus
-                
-                accuracy_multiplier = 1.0 - (new_x_dist / (PAD_WIDTH_METERS / 2.0))
-                bullseye_bonus = 30.0 * accuracy_multiplier
-                reward += bullseye_bonus
-                                                
-                fuel_bonus = getattr(self, 'fuel_left', 0.0) * 0.2 * speed_multiplier
-                reward += fuel_bonus
-                
-            # Step 5: The Crash Penalty
+                self.landing_status = "LANDED"
+                # THE JACKPOT
+                reward = (1.0 + speed_bonus) * time_remaining
             else:
                 self.landing_status = "CRASH"
-                reward -= 50.0
+                # THE CRASH PENALTY
+                reward = (dense_reward + speed_bonus) * time_remaining
+
+        # Check if we ran out of time safely
+        elif self.step_id >= self.max_steps:
+            truncated = True
 
         return reward, terminated, truncated
     
