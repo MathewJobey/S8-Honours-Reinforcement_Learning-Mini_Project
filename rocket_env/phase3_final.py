@@ -65,7 +65,7 @@ class Phase3Final(gym.Env):
         
         # 3. Force it to already be falling fast! (-80 to -40 m/s)
         # Now if it fires the engine, it just slows down instead of reversing gravity instantly.
-        start_vy = self.np_random.uniform(-80.0, -40.0)
+        start_vy = self.np_random.uniform(-100.0, 0.0)
         self.lander.linearVelocity = (0, start_vy)
         
         # Ensure it is not spinning when it spawns

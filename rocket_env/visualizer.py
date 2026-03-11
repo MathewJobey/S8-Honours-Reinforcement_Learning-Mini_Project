@@ -295,6 +295,9 @@ class RocketVisualizer:
 
     """HUD & FUEL BAR: The HUD displays critical flight information such as altitude, velocity, angle, and aerodynamic drag in a clear and concise manner. We also added a dynamic fuel bar in the top right corner that visually represents how much fuel is left, making it easier for both humans and AI to gauge their remaining resources at a glance. The fuel bar changes color from green to red as fuel depletes, providing an immediate visual cue about the urgency of refueling or landing safely before running out of fuel."""
     def _draw_hud(self):
+        # ---> THE FIX: Import the true altitude calculator <---
+        from .utils import get_true_altitude
+        
         vel = self.env.lander.linearVelocity
         pos = self.env.lander.position
         
@@ -303,13 +306,15 @@ class RocketVisualizer:
         center_val = getattr(self.env, 'center_side_power', 0.0)
         wrapped_angle = (self.env.lander.angle + math.pi) % (2 * math.pi) - math.pi
         
+        # ---> THE FIX: Calculate true altitude using the rocket dimensions <---
+        true_altitude = get_true_altitude(self.env.lander, ROCKET_H_WIDTH, ROCKET_HEIGHT)
+        
         # White Text for visibility against Sky
         texts = [
-            f"Altitude: {max(0.0, pos.y - 1.0):.1f} m",
-            # THE FIX 2: Removed abs() so we can see negative speeds (Left/Down)
+            # ---> THE FIX: Replace pos.y - 1.0 with true_altitude <---
+            f"Altitude: {max(0.0, true_altitude):.1f} m",
             f"X Vel: {vel.x:.1f} m/s",
             f"Y Vel: {vel.y:.1f} m/s",
-            # Use the wrapped angle so it stays between -180 and +180 degrees
             f"Angle: {math.degrees(wrapped_angle):.1f}",
             f"Aero Drag: {drag_val:.1f} N",               
             f"Nose Pwr: {nose_val:.2f}",               
