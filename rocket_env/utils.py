@@ -34,7 +34,7 @@ def calculate_distance_reward(pos_x, true_altitude, previous_distance):
     progress = previous_distance - current_distance
     
     # Step 4: Scale the progress
-    distance_reward = progress * 10.0
+    distance_reward = progress * 1.0
     
     # Step 5: Hand BOTH the points and the new memory back to the main game
     return distance_reward, current_distance
@@ -50,7 +50,7 @@ def calculate_posture_reward(tilt_rad, previous_tilt):
     
     # Step 3: Scale the progress into clean whole numbers
     # We multiply by 20.0 because straightening up is a smaller, harder movement than falling
-    posture_reward = progress * 20.0
+    posture_reward = progress * 2.0
     
     # Step 4: Hand BOTH the points and the new memory back to the main game
     return posture_reward, tilt_rad
@@ -69,7 +69,7 @@ def calculate_x_reward(pos_x, previous_x_dist):
     
     # Step 4: Scale the progress into clean whole numbers
     # We multiply by 10.0, just like the main distance tracker
-    x_reward = progress * 10.0
+    x_reward = progress * 1.0
     
     # Step 5: Hand BOTH the points and the new absolute distance back
     return x_reward, current_x_dist

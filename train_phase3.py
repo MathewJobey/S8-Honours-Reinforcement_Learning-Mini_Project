@@ -37,10 +37,13 @@ class RewardPlotCallback(BaseCallback):
         super().__init__(verbose)
         self.log_dir = log_dir
         self.plot_freq = plot_freq
+        self.last_plot_step = 0 # <--- The memory tracker!
 
     def _on_step(self) -> bool:
-        if self.n_calls % self.plot_freq == 0:
+        # Use true timesteps so it actually draws!
+        if self.num_timesteps - self.last_plot_step >= self.plot_freq:
             self.plot_rewards()
+            self.last_plot_step = self.num_timesteps
         return True
 
     def plot_rewards(self):
@@ -54,15 +57,16 @@ class RewardPlotCallback(BaseCallback):
             moving_avg = df['r'].rolling(window=100, min_periods=1).mean()
             plt.plot(moving_avg.values, label='moving avg', color='tab:orange', linewidth=2)
             
-            plt.xlabel('m episode')
+            plt.xlabel('episode')
             plt.ylabel('reward')
             plt.legend()
             
             plot_path = os.path.join(self.log_dir, f"reward_graph_step_{self.num_timesteps}.png")
             plt.savefig(plot_path)
             plt.close(fig) 
+            print(f"\n[SUCCESS: Graph saved at {self.num_timesteps} steps!]")
         except Exception as e:
-            pass
+            print(f"\n[ERROR: Failed to draw graph! Reason: {e}]")
 
 # ==========================================
 # STEP 2: RADAR & USER INPUT
@@ -104,42 +108,77 @@ print(f"Saving AI Brain files to: {current_models_dir}\n")
 # ==========================================
 # STEP 4: ENVIRONMENT & BRAIN SETUP
 # ==========================================
-env = make_vec_env("Phase3Final-v0", n_envs=4, monitor_dir=current_rewards_dir)
+env = make_vec_env("Phase3Final-v0", n_envs=16, monitor_dir=current_rewards_dir)
 
 if not is_new_run:
     print("Resuming training from the previous session...")
     model = SAC.load(latest_model_path, env=env, device="cuda")
+    
+    # ---> THE NEW RULE: Load the Flashcards <---
+    # Construct the exact path where the massive memory file should be
+    buffer_path = os.path.join(latest_models_dir, "sac_phase3_replay_buffer.pkl")
+    
+    # Check if the file actually exists on your hard drive before trying to load it
+    if os.path.exists(buffer_path):
+        print("Loading memory flashcards into RAM... (This might take a few seconds)")
+        model.load_replay_buffer(buffer_path)
+    else:
+        print("No memory flashcards found. Starting with a fresh memory bank.")
 else:
     print("Starting a brand new brain! (Old runs are kept safe)")
-    # The os.remove() deletion loop has been completely removed!
+    # 1. Define the massive brain structure (3 hidden layers, 512 neurons each)
+    custom_architecture = dict(net_arch=[512, 512, 512])
+    
     model = SAC(
-        "MlpPolicy",
-        env,
-        learning_rate=3e-4, 
-        batch_size=256,
-        gamma=0.995,
-        device="cuda", 
-        verbose=1
-    )
+    "MlpPolicy",
+    env,
+    learning_rate=3e-4,
+    buffer_size=2_000_000,
+    batch_size=6250,
+    learning_starts = 10000,
+    policy_kwargs=custom_architecture,
+    gamma=0.995,
+    device="cuda",
+    verbose=1
+)
 
 # ==========================================
 # STEP 5: THE CALLBACK BUNDLE
 # ==========================================
+# 25000 total steps / 16 environments = 1562 ticks per save
 checkpoint_callback = CheckpointCallback(
-    save_freq=25000, 
-    save_path=current_models_dir, # Rout the zip files to the specific models/Run X/ folder
+    save_freq=1562, 
+    save_path=current_models_dir, 
     name_prefix="sac_phase3"
 )
 
-plot_callback = RewardPlotCallback(log_dir=current_rewards_dir, plot_freq=25000)
+plot_callback = RewardPlotCallback(log_dir=current_rewards_dir, plot_freq=100000)
 callback_list = CallbackList([checkpoint_callback, plot_callback])
 
 # ==========================================
-# STEP 6: START THE MARATHON
+# STEP 6: START THE MARATHON (Infinite Mode)
 # ==========================================
-model.learn(total_timesteps=1500000, callback=callback_list, reset_num_timesteps=False)
+print("\nStarting infinite training! Press Ctrl+C in the terminal to stop and save at any time.")
 
-# Save the absolute final masterpiece inside the specific run folder
-final_path = os.path.join(current_models_dir, "sac_phase3_final_v0")
-model.save(final_path)
-print("Training finished and model saved!")
+try:
+    # 1. The Try Block: Run the marathon
+    # int(1e9) is 1,000,000,000 steps. Practically infinite!
+    model.learn(total_timesteps=int(1e9), callback=callback_list, reset_num_timesteps=False)
+
+except KeyboardInterrupt:
+    # 2. The Except Block: Catch the manual stop
+    # If you press Ctrl+C, Python jumps straight here instead of crashing
+    print("\nTraining manually interrupted by user! Initiating safe shutdown...")
+
+finally:
+    # 3. The Finally Block: The guaranteed save
+    # This runs whether it hits 1 billion steps OR you manually stopped it
+    final_path = os.path.join(current_models_dir, "sac_phase3_final_v0")
+    model.save(final_path)
+    print(f"Training finished and brain saved to: {final_path}")
+    
+    # ---> THE NEW RULE: Save the Flashcards <---
+    buffer_path = os.path.join(current_models_dir, "sac_phase3_replay_buffer.pkl")
+    print("Saving massive memory buffer to disk... (Do NOT close the terminal yet!)")
+    model.save_replay_buffer(buffer_path)
+    print("Flashcards safely saved! You can now close the terminal.")

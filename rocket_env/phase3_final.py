@@ -247,7 +247,7 @@ class Phase3Final(gym.Env):
         is_out_of_bounds = is_off_sides or is_above_ceiling or is_below_floor
 
         if is_out_of_bounds:
-            reward -= 1000.0
+            reward -= 100.0
             terminated = True 
             self.landing_status = "OUT_OF_BOUNDS"
             return reward, terminated, truncated
@@ -259,14 +259,14 @@ class Phase3Final(gym.Env):
         # ------------------------------------------    
         
         # 1. The Time Tax (The ticking clock)
-        reward -= 3.0 
+        reward -= 0.3
         
         # 2. The Main Engine Tax
-        reward -= self.main_engine_power * 2.0
+        reward -= self.main_engine_power * 0.2
         
         # 3. The Side Thruster Tax
-        reward -= abs(self.center_side_power) * 0.1
-        reward -= abs(self.nose_side_power) * 0.2
+        reward -= abs(self.center_side_power) * 0.02
+        reward -= abs(self.nose_side_power) * 0.01
         
         # ------------------------------------------
         #  2. Distance Points (Using utils.py)
@@ -286,10 +286,10 @@ class Phase3Final(gym.Env):
 
         # If the rocket is almost perfectly straight, give it a small safe bonus!
         if new_tilt < 0.05:
-            reward += 0.5
+            reward += 0.05
             
         # Squaring the tilt makes small wobbles cheap, but big leans incredibly expensive
-        tilt_penalty = (new_tilt ** 2) * 10.0
+        tilt_penalty = (new_tilt ** 2) * 1.0
         reward -= tilt_penalty
             
         # ------------------------------------------
@@ -303,11 +303,11 @@ class Phase3Final(gym.Env):
         # ---> THE NEW RULE: The Dead-Center Bonus <---
         # If the rocket's center of mass is within 0.1 meters of the exact middle, give a small cookie!
         if new_x_dist < 0.1:
-            reward += 0.5
+            reward += 0.05
         
         # ---> THE FIX: Exponential X-Drift Penalty <---
         # Squaring the distance creates a harsh invisible wall if it drifts far from center
-        x_penalty = (new_x_dist ** 2) * 2.0
+        x_penalty = (new_x_dist ** 2) * 0.2
         reward -= x_penalty
             
         # ------------------------------------------
@@ -324,7 +324,7 @@ class Phase3Final(gym.Env):
         # ---> YOUR NEW RULE: The Perfect Speed Bonus <---
         # Step 3: If the rocket is within 1.0 m/s of the perfect curve, give a cookie!
         if speed_difference < 1.0:
-            reward += 0.5
+            reward += 0.05
             
         # Step 4: Are we falling too fast compared to the curve?
         # Note: Falling speeds are negative, so -10 is less than -4.
@@ -332,7 +332,7 @@ class Phase3Final(gym.Env):
             speed_error = ideal_vy - vel.y 
             
             # Step 5: Apply the exponential speed penalty for meteor-drops
-            speed_penalty = (speed_error ** 2) * 2.0
+            speed_penalty = (speed_error ** 2) * 0.2
             reward -= speed_penalty
             
         # ==========================================
@@ -343,12 +343,16 @@ class Phase3Final(gym.Env):
         if getattr(self, 'game_over', False) or true_altitude <= 0.1:
             terminated = True
             
-            # Step 2: Grab the final falling speed 
-            # (We use abs() to strip away the negative sign for easier math)
-            impact_v = abs(vel.y)
+            # ---> THE FIX: The Ghost Brake Defense <---
+            # Step 2: Grab the real impact speed from the collision detector if it exists,
+            # otherwise fall back to the current velocity.
+            raw_impact = getattr(self, 'impact_speed', None)
+            if raw_impact is None:
+                raw_impact = vel.y
+                
+            impact_v = abs(raw_impact)
             
             # Step 3: The Strict Survival Checks
-            # 0.087 radians is exactly 5 degrees of tilt. Very strict!
             is_straight = new_tilt < 0.087      
             is_on_pad = new_x_dist < (PAD_WIDTH_METERS / 2.0)
             is_safe_speed = impact_v < 3.0
@@ -357,25 +361,21 @@ class Phase3Final(gym.Env):
             if is_straight and is_on_pad and is_safe_speed:
                 self.landing_status = "LANDED" 
                 
-                # Math.exp creates a curve. A softer impact yields a multiplier closer to 1.0.
                 speed_multiplier = math.exp(-impact_v / 2.0)
-                touchdown_bonus = 1000.0 * speed_multiplier
+                touchdown_bonus = 100.0 * speed_multiplier
                 reward += touchdown_bonus
                 
-                # Bullseye Math: 1.0 is perfect center. 0.0 is the edge of the pad.
                 accuracy_multiplier = 1.0 - (new_x_dist / (PAD_WIDTH_METERS / 2.0))
-                bullseye_bonus = 300.0 * accuracy_multiplier
+                bullseye_bonus = 30.0 * accuracy_multiplier
                 reward += bullseye_bonus
                                                 
-                # Leftover fuel is multiplied by the safe speed for a final cookie
-                fuel_bonus = getattr(self, 'fuel_left', 0.0) * 2.0 * speed_multiplier
+                fuel_bonus = getattr(self, 'fuel_left', 0.0) * 0.2 * speed_multiplier
                 reward += fuel_bonus
                 
             # Step 5: The Crash Penalty
             else:
                 self.landing_status = "CRASH"
-                # A smaller penalty than my 1000, which is totally fine if your taxes are high!
-                reward -= 500.0
+                reward -= 50.0
 
         return reward, terminated, truncated
     
