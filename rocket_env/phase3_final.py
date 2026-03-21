@@ -22,10 +22,9 @@ class Phase3Final(gym.Env):
         self.start_y = 500.0 # Set the default drop height, and create a ceiling that is 20% higher
         self.max_altitude = self.start_y * 1.2
         
-        # Contains 8 variables: [X Pos, Y Pos, X Vel, Y Vel, Angle, Angular Vel, Fuel, Hover Power]
+        # Contains 12 variables: [X, Y, vX, vY, Angle, vAngle, Fuel, Hover, Speedometer, Prev Main, Prev Center, Prev Nose]
         self.observation_space = spaces.Box(
-            # We changed shape=(7,) to shape=(8,) to make room for our new Cheat Sheet!
-            low=-np.inf, high=np.inf, shape=(8,), dtype=np.float32
+            low=-np.inf, high=np.inf, shape=(12,), dtype=np.float32
         )
         
         # Action space to 3 continuous sliders: [Main, Center, Nose]
@@ -81,7 +80,10 @@ class Phase3Final(gym.Env):
         self.lander.angularVelocity = 0.0
         
         self.prev_y = self.lander.worldCenter.y
-        self.impact_speed = None  # <--- THE CRASH MEMORY RESET!
+        self.impact_speed = None  
+        
+        # ---> THE NEW ASSIST: Blank Memory for Frame 1 <---
+        self.prev_actions = [0.0, 0.0, 0.0]
 
         state = self._get_state()
         return np.array(state, dtype=np.float32), {}
@@ -162,6 +164,9 @@ class Phase3Final(gym.Env):
         self.center_side_power = center_side_power
         self.nose_side_power = nose_side_power
         
+        # ---> THE NEW ASSIST: Save the moves for the next frame! <---
+        self.prev_actions = [main_engine_power, center_side_power, nose_side_power]
+        
         vel = self.lander.linearVelocity
         self.pre_step_velocity = math.sqrt(vel.x**2 + vel.y**2)
         
@@ -205,15 +210,22 @@ class Phase3Final(gym.Env):
         vel = self.lander.linearVelocity
         
         world_width_half = VIEWPORT_W / SCALE / 2 
-        
-        # --- THE FIX 1: WRAP THE ANGLE ---
-        # This math forces the angle to always stay between -3.14 and +3.14
         norm_angle = (self.lander.angle + math.pi) % (2 * math.pi) - math.pi
         
-        # ---> THE MLP ASSIST: The Hover Cheat Sheet <---
-        # Calculate downward force (Mass * Gravity) and divide by absolute engine strength
+        # 1. The Hover Cheat Sheet
         gravity_force = self.lander.mass * abs(GRAVITY_Y)
         hover_power = float(gravity_force / MAIN_ENGINE_POWER)
+        
+        # ---> THE NEW ASSIST: The Glide Slope Speedometer <---
+        # Step A: Find out exactly how high the physical bottom of the rocket is
+        true_altitude = get_true_altitude(self.lander, ROCKET_H_WIDTH, ROCKET_HEIGHT)
+        
+        # Step B: Calculate the exact speed the mathematical curve wants us to go
+        ideal_vy = -(math.sqrt(max(0.0, true_altitude)) * 4.0)
+        
+        # Step C: Calculate the difference! 
+        # (If this is 0.0, the AI is flying perfectly. If it is positive, it is falling too fast!)
+        speed_error = ideal_vy - vel.y
         
         return [
             pos.x / world_width_half,       # 1. Horizontal Position (-1 to 1)
@@ -223,8 +235,13 @@ class Phase3Final(gym.Env):
             norm_angle / math.pi,           # 5. Angle (-1 to 1) 
             self.lander.angularVelocity/6.0,# 6. Angular Velocity
             self.fuel_left / INITIAL_FUEL,  # 7. Fuel
+            hover_power,                    # 8. Exact T:W Ratio
+            speed_error / 10.0,             # 9. The Speedometer! (Scaled by 10)
             
-            hover_power                     # 8. THE NEW SENSOR: Exact T:W Ratio!
+            # ---> THE NEW ASSIST: Action Memory <---
+            self.prev_actions[0],           # 10. Previous Main Engine
+            self.prev_actions[1],           # 11. Previous Center Thruster
+            self.prev_actions[2]            # 12. Previous Nose Thruster
         ]
     
     """REWARD FUNCTION TO CALCULATE THE REWARD FOR THE CURRENT STATE. THIS FUNCTION TAKES INTO ACCOUNT THE DISTANCE TO THE LANDING PAD, THE VELOCITY, THE ANGLE, AND THE FUEL LEFT TO COMPUTE A COMPREHENSIVE REWARD SIGNAL THAT ENCOURAGES SAFE AND EFFICIENT LANDINGS."""   
