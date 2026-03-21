@@ -22,9 +22,10 @@ class Phase3Final(gym.Env):
         self.start_y = 500.0 # Set the default drop height, and create a ceiling that is 20% higher
         self.max_altitude = self.start_y * 1.2
         
-        # Contains 7 variables: [X Pos, Y Pos, X Vel, Y Vel, Angle, Angular Vel, Fuel]
+        # Contains 8 variables: [X Pos, Y Pos, X Vel, Y Vel, Angle, Angular Vel, Fuel, Hover Power]
         self.observation_space = spaces.Box(
-            low=-np.inf, high=np.inf, shape=(7,), dtype=np.float32
+            # We changed shape=(7,) to shape=(8,) to make room for our new Cheat Sheet!
+            low=-np.inf, high=np.inf, shape=(8,), dtype=np.float32
         )
         
         # Action space to 3 continuous sliders: [Main, Center, Nose]
@@ -199,7 +200,6 @@ class Phase3Final(gym.Env):
         reward, terminated, truncated = self._compute_reward(state)
         return np.array(state, dtype=np.float32), reward, terminated, truncated, {}
     
-    """NORMALIZATION OF THE OBSERVATION SPACE. THIS FUNCTION TAKES THE RAW PHYSICS DATA AND SCALES IT TO A RANGE THAT IS EASIER FOR THE AI TO LEARN FROM. THIS INCLUDES NORMALIZING POSITION, VELOCITY, ANGLE, AND FUEL LEVEL."""
     def _get_state(self):
         pos = self.lander.worldCenter
         vel = self.lander.linearVelocity
@@ -210,17 +210,21 @@ class Phase3Final(gym.Env):
         # This math forces the angle to always stay between -3.14 and +3.14
         norm_angle = (self.lander.angle + math.pi) % (2 * math.pi) - math.pi
         
+        # ---> THE MLP ASSIST: The Hover Cheat Sheet <---
+        # Calculate downward force (Mass * Gravity) and divide by absolute engine strength
+        gravity_force = self.lander.mass * abs(GRAVITY_Y)
+        hover_power = float(gravity_force / MAIN_ENGINE_POWER)
+        
         return [
             pos.x / world_width_half,       # 1. Horizontal Position (-1 to 1)
             pos.y / self.max_altitude,      # 2. Vertical Position (0 to 1)
             vel.x / 150.0,                  # 3. Horizontal Velocity 
             vel.y / 150.0,                  # 4. Vertical Velocity
-            
-            # --- THE TINY TWEAK ---
             norm_angle / math.pi,           # 5. Angle (-1 to 1) 
-            
             self.lander.angularVelocity/6.0,# 6. Angular Velocity
-            self.fuel_left / INITIAL_FUEL   # 7. Fuel
+            self.fuel_left / INITIAL_FUEL,  # 7. Fuel
+            
+            hover_power                     # 8. THE NEW SENSOR: Exact T:W Ratio!
         ]
     
     """REWARD FUNCTION TO CALCULATE THE REWARD FOR THE CURRENT STATE. THIS FUNCTION TAKES INTO ACCOUNT THE DISTANCE TO THE LANDING PAD, THE VELOCITY, THE ANGLE, AND THE FUEL LEFT TO COMPUTE A COMPREHENSIVE REWARD SIGNAL THAT ENCOURAGES SAFE AND EFFICIENT LANDINGS."""   
