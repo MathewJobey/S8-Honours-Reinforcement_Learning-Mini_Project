@@ -55,18 +55,26 @@ class Phase3Final(gym.Env):
 
         start_y = self.start_y
         
-        # --- THE FIX: DOMAIN RANDOMIZATION ---
-        # 1. Pick a random X position between -30 and 30
-        start_x = self.np_random.uniform(-30.0, 30.0)
-        self.lander.position = (start_x, start_y)
+        # --- THE FIX: DISCRETE DOMAIN RANDOMIZATION ---
         
-        # 2. Force a Belly-Flop! Pick an angle between -90 and +90 degrees (-1.57 to 1.57 rads)
-        self.lander.angle = self.np_random.uniform(-math.pi, math.pi)
+        # 1. Pick a specific training X position! (Center, halfway, or edges)
+        possible_x_positions = [0.0, -15.0, 15.0, -30.0, 30.0]
+        start_x = self.np_random.choice(possible_x_positions)
         
-        # 3. Force it to already be falling fast! (-80 to -40 m/s)
-        # Now if it fires the engine, it just slows down instead of reversing gravity instantly.
-        start_vy = self.np_random.uniform(-100.0, 0.0)
-        self.lander.linearVelocity = (0, start_vy)
+        self.lander.position = (float(start_x), start_y)
+        
+        # 2. Force a specific training angle! (0, 45, 90, 135, or 180 degrees)
+        possible_angles = [0, 45, -45, 90, -90, 135, -135, 180, -180]
+        chosen_angle_deg = self.np_random.choice(possible_angles)
+        
+        # Convert degrees to radians because the physics engine requires it
+        self.lander.angle = math.radians(chosen_angle_deg)
+        
+        # 3. Force a specific training speed! (0, 25, 50, 75, or 100 m/s downwards)
+        # Note: We use negative numbers because falling is mathematically negative
+        possible_speeds = [0.0, -25.0, -50.0, -75.0, -100.0]
+        start_vy = self.np_random.choice(possible_speeds)
+        self.lander.linearVelocity = (0, float(start_vy))
         
         # Ensure it is not spinning when it spawns
         self.lander.angularVelocity = 0.0
