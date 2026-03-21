@@ -318,8 +318,10 @@ class Phase3Final(gym.Env):
             reward += 0.05
             
         # Squaring the tilt makes small wobbles cheap, but big leans incredibly expensive
-        tilt_penalty = (new_tilt ** 2) * 1.0
-        reward -= tilt_penalty
+        # Squaring the tilt makes small wobbles cheap, but big leans incredibly expensive
+        raw_tilt_penalty = (new_tilt ** 2) * 1.0
+        safe_tilt_penalty = min(1.0, raw_tilt_penalty)
+        reward -= safe_tilt_penalty
         
         # ---> THE NEW RULE: Final Approach Corridor <---
         # If we are 5 meters or lower to the ground...
@@ -343,10 +345,11 @@ class Phase3Final(gym.Env):
         if new_x_dist < 0.1:
             reward += 0.05
         
-        # ---> THE FIX: Exponential X-Drift Penalty <---
-        # Squaring the distance creates a harsh invisible wall if it drifts far from center
-        x_penalty = (new_x_dist ** 2) * 0.2
-        reward -= x_penalty
+        raw_x_penalty = (new_x_dist ** 2) * 0.02
+        
+        # Step 2: Use min() to put a hard ceiling on the punishment! 
+        safe_x_penalty = min(1.0, raw_x_penalty)
+        reward -= safe_x_penalty
         
         if true_altitude <= 5.0:
             
@@ -370,22 +373,20 @@ class Phase3Final(gym.Env):
         if speed_difference < 1.0:
             reward += 0.05
             
-        # Step 4: Are we falling too fast compared to the curve?
-        # Note: Falling speeds are negative, so -10 is less than -4.
         if vel.y < ideal_vy:
             speed_error = ideal_vy - vel.y 
             
-            # Step 5: Apply the exponential speed penalty for meteor-drops
-            speed_penalty = (speed_error ** 2) * 0.2
-            reward -= speed_penalty
+            # Step 5: Apply the capped exponential speed penalty for meteor-drops
+            raw_speed_penalty = (speed_error ** 2) * 0.02
+            safe_speed_penalty = min(1.0, raw_speed_penalty)
+            reward -= safe_speed_penalty
             
         # ---> THE NEW RULE: The Anti-Climb Penalty <---
         # In physics, falling is negative speed. If vel.y is positive, the rocket is going UP!
         if vel.y > 0.0:
-            # We punish it based on how fast it is climbing. 
-            # (Climbing at 2.0 m/s = 1.0 point penalty per frame)
-            climb_penalty = vel.y * 0.5
-            reward -= climb_penalty
+            raw_climb_penalty = vel.y * 0.5
+            safe_climb_penalty = min(1.0, raw_climb_penalty)
+            reward -= safe_climb_penalty
             
         # ---> THE NEW RULE: Final Approach Speed Corridor <---
         # If we are 5 meters or lower to the ground...
