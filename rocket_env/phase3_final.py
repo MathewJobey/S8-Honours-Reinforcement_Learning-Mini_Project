@@ -221,7 +221,7 @@ class Phase3Final(gym.Env):
         true_altitude = get_true_altitude(self.lander, ROCKET_H_WIDTH, ROCKET_HEIGHT)
         
         # Step B: Calculate the exact speed the mathematical curve wants us to go
-        ideal_vy = -(math.sqrt(max(0.0, true_altitude)) * 4.0)
+        ideal_vy = -(math.sqrt(max(0.0, true_altitude)) * 4.0) - 1.0
         
         # Step C: Calculate the difference! 
         # (If this is 0.0, the AI is flying perfectly. If it is positive, it is falling too fast!)
@@ -362,7 +362,7 @@ class Phase3Final(gym.Env):
         # ------------------------------------------
         
         # Step 1: Calculate the ideal falling speed for any altitude
-        ideal_vy = -math.sqrt(max(0.0, true_altitude)) * 4.0
+        ideal_vy = -(math.sqrt(max(0.0, true_altitude)) * 4.0) - 1.0
         
         # Step 2: Calculate the exact difference between current speed and ideal speed
         # abs() makes sure the difference is a clean positive number
