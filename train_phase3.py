@@ -48,10 +48,14 @@ class RewardPlotCallback(BaseCallback):
 
     def plot_rewards(self):
         try:
+            # 1. Load the secret spreadsheet
             df = load_results(self.log_dir)
             if len(df) < 10:
                 return 
             
+            # ==========================================
+            # GRAPH 1: THE REWARD GRAPH (Your original code)
+            # ==========================================
             fig = plt.figure(figsize=(10, 5))
             plt.plot(df['r'].values, label='episode reward', alpha=0.8, color='tab:blue')
             moving_avg = df['r'].rolling(window=100, min_periods=1).mean()
@@ -64,9 +68,38 @@ class RewardPlotCallback(BaseCallback):
             plot_path = os.path.join(self.log_dir, f"reward_graph_step_{self.num_timesteps}.png")
             plt.savefig(plot_path)
             plt.close(fig) 
-            print(f"\n[SUCCESS: Graph saved at {self.num_timesteps} steps!]")
+            
+            # ==========================================
+            # GRAPH 2: THE EPISODE LENGTH GRAPH (The new addition!)
+            # ==========================================
+            # 2. Create a brand new blank canvas for the second picture
+            fig2 = plt.figure(figsize=(10, 5))
+            
+            # 3. Plot the raw episode lengths (the 'l' column) in blue
+            plt.plot(df['l'].values, label='episode length', alpha=0.8, color='tab:blue')
+            
+            # 4. Calculate the 100-episode moving average for the length
+            moving_avg_len = df['l'].rolling(window=100, min_periods=1).mean()
+            
+            # 5. Plot the moving average in GREEN
+            plt.plot(moving_avg_len.values, label='moving avg', color='tab:red', linewidth=2)
+            
+            # 6. Add labels so we know what we are looking at
+            plt.xlabel('episode')
+            plt.ylabel('episode length (frames)')
+            plt.legend()
+            
+            # 7. Save this second picture with a new name
+            plot_path2 = os.path.join(self.log_dir, f"length_graph_step_{self.num_timesteps}.png")
+            plt.savefig(plot_path2)
+            
+            # 8. Throw away the canvas to keep the computer's memory clean
+            plt.close(fig2)
+            
+            print(f"\n[SUCCESS: Reward AND Length graphs saved at {self.num_timesteps} steps!]")
+            
         except Exception as e:
-            print(f"\n[ERROR: Failed to draw graph! Reason: {e}]")
+            print(f"\n[ERROR: Failed to draw graphs! Reason: {e}]")
 
 # ==========================================
 # STEP 2: RADAR & USER INPUT
