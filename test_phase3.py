@@ -117,6 +117,9 @@ else:
         # Create an empty piggy bank for this episode's score!
         total_reward = 0.0 
         
+        # ---> NEW: Create an empty counter for the episode length!
+        episode_length = 0 
+        
         print(f"\n--- Episode {ep + 1} Starting ---")
         
         while not done:
@@ -129,14 +132,17 @@ else:
             # Add this frame's reward to our running total!
             total_reward += reward
             
+            # ---> NEW: Add 1 tally mark to our frame counter!
+            episode_length += 1
+            
             # DRAW THE FRAME! 
             env.render()
             
             # Check if the round is over
             done = terminated or truncated
     
-        # Print the final score when the episode finishes!
-        print(f">>> Episode Finished. Total Score: {total_reward:.2f}")
+        # ---> NEW: Print both the final score AND the total length when the episode finishes!
+        print(f">>> Episode Finished. Total Score: {total_reward:.2f} | Length: {episode_length} frames")
         time.sleep(2.0)
     
     env.close()
