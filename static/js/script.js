@@ -3,14 +3,24 @@ function syncSlider(el, valId) {
     const min = parseFloat(el.min);
     const max = parseFloat(el.max);
     const val = parseFloat(el.value);
-    const pct = ((val - min) / (max - min)) * 100;
+    
+    // Prevent divide by zero error for the locked altitude slider!
+    let pct = 50; 
+    if (max !== min) {
+        pct = ((val - min) / (max - min)) * 100;
+    }
     el.style.setProperty('--fill', pct + '%');
 }
 
-// init fills on load
-['sliderAltitude','sliderSpeed','sliderXPos'].forEach(id => {
+// Add sliderAngle to the initialization loop
+['sliderAltitude','sliderSpeed','sliderXPos', 'sliderAngle'].forEach(id => {
     const el = document.getElementById(id);
-    const valId = { sliderAltitude:'valAltitude', sliderSpeed:'valSpeed', sliderXPos:'valXPos' }[id];
+    const valId = { 
+        sliderAltitude:'valAltitude', 
+        sliderSpeed:'valSpeed', 
+        sliderXPos:'valXPos',
+        sliderAngle:'valAngle' // <--- NEW!
+    }[id];
     syncSlider(el, valId);
 });
 
@@ -22,7 +32,6 @@ document.getElementById('launchBtn').addEventListener('click', function() {
     document.getElementById('statusDot').style.background = '#ff4d6a';
     document.getElementById('statusDot').style.boxShadow = '0 0 8px #ff4d6a';
 
-    // speed is positive in UI, send as negative downward velocity
     const rawSpeed = document.getElementById('sliderSpeed').value;
 
     fetch('/launch', {
@@ -30,8 +39,9 @@ document.getElementById('launchBtn').addEventListener('click', function() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             altitude: document.getElementById('sliderAltitude').value,
-            speed: -Math.abs(rawSpeed),   // downward
-            x_pos: document.getElementById('sliderXPos').value
+            speed: -Math.abs(rawSpeed), // Converts 50 to -50.0 automatically!
+            x_pos: document.getElementById('sliderXPos').value,
+            angle: document.getElementById('sliderAngle').value // <--- NEW!
         })
     }).then(() => {
         document.getElementById('video-screen').src = '/video_feed?' + Date.now();

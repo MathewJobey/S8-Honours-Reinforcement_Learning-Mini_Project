@@ -136,7 +136,8 @@ header {
 
 .controls-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
+    /* CHANGED: From 1fr 1fr 1fr to a 2x2 grid */
+    grid-template-columns: 1fr 1fr; 
     gap: 32px;
     margin-bottom: 28px;
 }
