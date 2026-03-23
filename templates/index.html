@@ -27,14 +27,14 @@
 
                 <div class="control-group">
                     <label>
-                        Altitude
-                        <span><span class="val" id="valAltitude">100</span><span class="unit">m</span></span>
+                        Altitude (Locked)
+                        <span><span class="val" id="valAltitude">500</span><span class="unit">m</span></span>
                     </label>
                     <div class="slider-wrap">
                         <input type="range" class="filled" id="sliderAltitude"
-                               min="100" max="1000" value="100"
+                               min="500" max="500" value="500" disabled
                                oninput="syncSlider(this, 'valAltitude')">
-                        <div class="ticks"><span class="tick">100</span><span class="tick">550</span><span class="tick">1000</span></div>
+                        <div class="ticks"><span class="tick"></span><span class="tick">500</span><span class="tick"></span></div>
                     </div>
                 </div>
 
@@ -45,9 +45,9 @@
                     </label>
                     <div class="slider-wrap">
                         <input type="range" class="filled" id="sliderSpeed"
-                               min="0" max="130" value="50"
+                               min="0" max="100" step="25" value="50"
                                oninput="syncSlider(this, 'valSpeed')">
-                        <div class="ticks"><span class="tick">0</span><span class="tick">65</span><span class="tick">130</span></div>
+                        <div class="ticks"><span class="tick">0</span><span class="tick">50</span><span class="tick">100</span></div>
                     </div>
                 </div>
 
@@ -58,9 +58,22 @@
                     </label>
                     <div class="slider-wrap">
                         <input type="range" class="filled" id="sliderXPos"
-                               min="-30" max="30" value="0"
+                               min="-30" max="30" step="15" value="0"
                                oninput="syncSlider(this, 'valXPos')">
                         <div class="ticks"><span class="tick">−30</span><span class="tick">0</span><span class="tick">+30</span></div>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>
+                        Spawn Angle
+                        <span><span class="val" id="valAngle">0</span><span class="unit">deg</span></span>
+                    </label>
+                    <div class="slider-wrap">
+                        <input type="range" class="filled" id="sliderAngle"
+                               min="-180" max="180" step="45" value="0"
+                               oninput="syncSlider(this, 'valAngle')">
+                        <div class="ticks"><span class="tick">-180</span><span class="tick">0</span><span class="tick">+180</span></div>
                     </div>
                 </div>
 
