@@ -9,7 +9,7 @@ from .settings import *
 from .physics import ContactDetector
 from .visualizer import RocketVisualizer
 
-class Phase3Final(gym.Env):
+class Phase3App(gym.Env):
     metadata = {'render_modes': ['human', 'rgb_array'], 'render_fps': FPS}
 
     def __init__(self, render_mode=None):
@@ -55,26 +55,24 @@ class Phase3Final(gym.Env):
 
         start_y = self.start_y
         
-        # --- THE FIX: DISCRETE DOMAIN RANDOMIZATION ---
+        # --- THE FIX: WEB DASHBOARD OVERRIDE ---
+        # 1. Set the safe default fallbacks just in case the web data is missing
+        start_x = 0.0
+        start_y = self.start_y
+        chosen_angle_deg = 0.0
+        start_vy = -50.0
         
-        # 1. Pick a specific training X position! (Center, halfway, or edges)
-        possible_x_positions = [0.0, -15.0, 15.0, -30.0, 30.0]
-        start_x = self.np_random.choice(possible_x_positions)
-        
-        self.lander.position = (float(start_x), start_y)
-        
-        # 2. Force a specific training angle! (0, 45, 90, 135, or 180 degrees)
-        possible_angles = [0, 45, -45, 90, -90, 135, -135, 180, -180]
-        chosen_angle_deg = self.np_random.choice(possible_angles)
-        
-        # Convert degrees to radians because the physics engine requires it
+        # 2. If the user sent options from the website, overwrite the defaults!
+        if options is not None:
+            start_x = float(options.get("x_pos", start_x))
+            start_y = float(options.get("altitude", start_y))
+            chosen_angle_deg = float(options.get("angle", chosen_angle_deg))
+            start_vy = float(options.get("speed", start_vy))
+            
+        # 3. Apply the final numbers to the physics engine
+        self.lander.position = (start_x, start_y)
         self.lander.angle = math.radians(chosen_angle_deg)
-        
-        # 3. Force a specific training speed! (0, 25, 50, 75, or 100 m/s downwards)
-        # Note: We use negative numbers because falling is mathematically negative
-        possible_speeds = [0.0, -25.0, -50.0, -75.0, -100.0]
-        start_vy = self.np_random.choice(possible_speeds)
-        self.lander.linearVelocity = (0, float(start_vy))
+        self.lander.linearVelocity = (0, start_vy)
         
         # Ensure it is not spinning when it spawns
         self.lander.angularVelocity = 0.0
