@@ -4,7 +4,6 @@ function syncSlider(el, valId) {
     const max = parseFloat(el.max);
     const val = parseFloat(el.value);
     
-    // Prevent divide by zero error for the locked altitude slider!
     let pct = 50; 
     if (max !== min) {
         pct = ((val - min) / (max - min)) * 100;
@@ -12,14 +11,13 @@ function syncSlider(el, valId) {
     el.style.setProperty('--fill', pct + '%');
 }
 
-// Add sliderAngle to the initialization loop
-['sliderAltitude','sliderSpeed','sliderXPos', 'sliderAngle'].forEach(id => {
+// Removed sliderAltitude to prevent crashes
+['sliderSpeed','sliderXPos', 'sliderAngle'].forEach(id => {
     const el = document.getElementById(id);
     const valId = { 
-        sliderAltitude:'valAltitude', 
         sliderSpeed:'valSpeed', 
         sliderXPos:'valXPos',
-        sliderAngle:'valAngle' // <--- NEW!
+        sliderAngle:'valAngle'
     }[id];
     syncSlider(el, valId);
 });
@@ -38,10 +36,10 @@ document.getElementById('launchBtn').addEventListener('click', function() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            altitude: document.getElementById('sliderAltitude').value,
-            speed: -Math.abs(rawSpeed), // Converts 50 to -50.0 automatically!
+            altitude: 500.0, // Hardcoded the locked altitude!
+            speed: -Math.abs(rawSpeed), 
             x_pos: document.getElementById('sliderXPos').value,
-            angle: document.getElementById('sliderAngle').value // <--- NEW!
+            angle: document.getElementById('sliderAngle').value 
         })
     }).then(() => {
         document.getElementById('video-screen').src = '/video_feed?' + Date.now();

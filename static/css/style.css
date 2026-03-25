@@ -58,7 +58,7 @@ body::after {
 .container {
     position: relative;
     z-index: 1;
-    max-width: 900px;
+    max-width: 1100px;
     margin: 0 auto;
     display: flex;
     flex-direction: column;
@@ -134,16 +134,62 @@ header {
     backdrop-filter: blur(12px);
 }
 
-.controls-grid {
-    display: grid;
-    /* CHANGED: From 1fr 1fr 1fr to a 2x2 grid */
-    grid-template-columns: 1fr 1fr; 
+/* ── NEW SIDE-BY-SIDE LAYOUT ── */
+.main-layout {
+    display: flex;
     gap: 32px;
+    align-items: flex-start;
+}
+
+/* LEFT: Video scales to fill remaining space */
+.video-wrap {
+    flex: 1;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    display: flex;
+    justify-content: center;
+    backdrop-filter: blur(12px);
+}
+
+#video-screen {
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    width: 100%;       /* Fills the container smoothly */
+    max-width: 700px; 
+    height: auto;
+    display: block;
+}
+
+/* RIGHT: Controls locked to a compact width */
+.controls {
+    flex: 0 0 320px; /* Locks the dashboard to 320px wide */
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px;
+    backdrop-filter: blur(12px);
+}
+
+/* Sliders stacked vertically */
+.controls-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 28px; 
     margin-bottom: 28px;
 }
 
-@media (max-width: 640px) {
-    .controls-grid { grid-template-columns: 1fr; gap: 24px; }
+/* Collapse into a single column on smaller screens */
+@media (max-width: 850px) {
+    .main-layout {
+        flex-direction: column;
+    }
+    .controls {
+        flex: auto;
+        width: 100%;
+    }
 }
 
 .control-group label {

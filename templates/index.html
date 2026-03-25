@@ -22,70 +22,66 @@
             </div>
         </header>
 
-        <section class="controls">
-            <div class="controls-grid">
+        <main class="main-layout">
+            
+            <section class="video-wrap">
+                <img id="video-screen" src="/video_feed" alt="Simulation feed">
+            </section>
 
-                <div class="control-group">
-                    <label>
-                        Altitude (Locked)
-                        <span><span class="val" id="valAltitude">500</span><span class="unit">m</span></span>
-                    </label>
-                    <div class="slider-wrap">
-                        <input type="range" class="filled" id="sliderAltitude"
-                               min="500" max="500" value="500" disabled
-                               oninput="syncSlider(this, 'valAltitude')">
-                        <div class="ticks"><span class="tick"></span><span class="tick">500</span><span class="tick"></span></div>
+            <section class="controls">
+                <div class="controls-stack">
+
+                    <div class="control-group">
+                        <label style="margin-bottom: 0;">
+                            Altitude (Locked)
+                            <span><span class="val">500</span><span class="unit">m</span></span>
+                        </label>
                     </div>
+
+                    <div class="control-group">
+                        <label>
+                            Drop Speed
+                            <span><span class="val" id="valSpeed">50</span><span class="unit">m/s</span></span>
+                        </label>
+                        <div class="slider-wrap">
+                            <input type="range" class="filled" id="sliderSpeed"
+                                   min="0" max="100" step="25" value="50"
+                                   oninput="syncSlider(this, 'valSpeed')">
+                            <div class="ticks"><span class="tick">0</span><span class="tick">50</span><span class="tick">100</span></div>
+                        </div>
+                    </div>
+
+                    <div class="control-group">
+                        <label>
+                            Spawn Offset
+                            <span><span class="val" id="valXPos">0</span><span class="unit">m</span></span>
+                        </label>
+                        <div class="slider-wrap">
+                            <input type="range" class="filled" id="sliderXPos"
+                                   min="-30" max="30" step="15" value="0"
+                                   oninput="syncSlider(this, 'valXPos')">
+                            <div class="ticks"><span class="tick">−30</span><span class="tick">0</span><span class="tick">+30</span></div>
+                        </div>
+                    </div>
+
+                    <div class="control-group">
+                        <label>
+                            Spawn Angle
+                            <span><span class="val" id="valAngle">0</span><span class="unit">deg</span></span>
+                        </label>
+                        <div class="slider-wrap">
+                            <input type="range" class="filled" id="sliderAngle"
+                                   min="-180" max="180" step="45" value="0"
+                                   oninput="syncSlider(this, 'valAngle')">
+                            <div class="ticks"><span class="tick">-180</span><span class="tick">0</span><span class="tick">+180</span></div>
+                        </div>
+                    </div>
+
                 </div>
 
-                <div class="control-group">
-                    <label>
-                        Drop Speed
-                        <span><span class="val" id="valSpeed">50</span><span class="unit">m/s</span></span>
-                    </label>
-                    <div class="slider-wrap">
-                        <input type="range" class="filled" id="sliderSpeed"
-                               min="0" max="100" step="25" value="50"
-                               oninput="syncSlider(this, 'valSpeed')">
-                        <div class="ticks"><span class="tick">0</span><span class="tick">50</span><span class="tick">100</span></div>
-                    </div>
-                </div>
-
-                <div class="control-group">
-                    <label>
-                        Spawn Offset
-                        <span><span class="val" id="valXPos">0</span><span class="unit">m</span></span>
-                    </label>
-                    <div class="slider-wrap">
-                        <input type="range" class="filled" id="sliderXPos"
-                               min="-30" max="30" step="15" value="0"
-                               oninput="syncSlider(this, 'valXPos')">
-                        <div class="ticks"><span class="tick">−30</span><span class="tick">0</span><span class="tick">+30</span></div>
-                    </div>
-                </div>
-
-                <div class="control-group">
-                    <label>
-                        Spawn Angle
-                        <span><span class="val" id="valAngle">0</span><span class="unit">deg</span></span>
-                    </label>
-                    <div class="slider-wrap">
-                        <input type="range" class="filled" id="sliderAngle"
-                               min="-180" max="180" step="45" value="0"
-                               oninput="syncSlider(this, 'valAngle')">
-                        <div class="ticks"><span class="tick">-180</span><span class="tick">0</span><span class="tick">+180</span></div>
-                    </div>
-                </div>
-
-            </div>
-
-            <button class="launch-btn" id="launchBtn">INITIATE DROP</button>
-        </section>
-
-        <section class="video-wrap">
-            <img id="video-screen" src="/video_feed" width="700" height="750" alt="Simulation feed">
-        </section>
-
+                <button class="launch-btn" id="launchBtn">INITIATE DROP</button>
+            </section>
+        </main>
     </div>
 
     <script src="{{ url_for('static', filename='js/script.js') }}"></script>

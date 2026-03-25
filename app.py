@@ -66,10 +66,11 @@ def generate_video_frames():
         # Compress those pixels into a standard JPEG image
         img = Image.fromarray(frame_pixels)
         buffer = io.BytesIO()
-        img.save(buffer, format="JPEG", quality=70)
+        # New crystal-clear PNG!
+        # The 'Perfect JPEG': Blazing fast, but keeps sharp edges!
+        img.save(buffer, format="JPEG", quality=100, subsampling=0)
         image_bytes = buffer.getvalue()
-        
-        # Pack the image into an HTTP stream chunk and "yield" it to the browser
+            
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + image_bytes + b'\r\n')
         
