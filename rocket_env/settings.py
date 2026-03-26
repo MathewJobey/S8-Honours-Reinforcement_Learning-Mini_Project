@@ -2,7 +2,7 @@
 
 # Screen / Rendering
 FPS = 60
-SCALE =10.0   #  affects how large the screen elements are
+SCALE =8.0   #  affects how large the screen elements are
 VIEWPORT_W = 700
 VIEWPORT_H = 750
 

@@ -504,3 +504,24 @@ class Phase3App(gym.Env):
         self.lander.color1 = LANDER_COLOR
         self.lander.userData = "rocket"
         self.drawlist = [self.lander]
+        
+    def get_telemetry(self):
+        """NEW: Packages all live flight data to send to the web dashboard."""
+        vel = self.lander.linearVelocity
+        wrapped_angle = (self.lander.angle + math.pi) % (2 * math.pi) - math.pi
+        true_altitude = get_true_altitude(self.lander, ROCKET_H_WIDTH, ROCKET_HEIGHT)
+        fuel_pct = max(0.0, min(100.0, (self.fuel_left / INITIAL_FUEL) * 100))
+        
+        # We wrap every value in float() to strip away the NumPy float32 formatting
+        # so that Flask can safely convert it to JSON!
+        return {
+            "altitude": float(round(max(0.0, true_altitude), 1)),
+            "vel_x": float(round(vel.x, 1)),
+            "vel_y": float(round(vel.y, 1)),
+            "angle": float(round(math.degrees(wrapped_angle), 1)),
+            "main_thrust": float(round(self.main_engine_power * 100, 0)),
+            "nose_thrust": float(round(self.nose_side_power * 100, 0)),
+            "center_thrust": float(round(self.center_side_power * 100, 0)),
+            "drag": float(round(getattr(self, 'current_drag', 0.0), 1)),
+            "fuel_pct": float(fuel_pct)
+        }
