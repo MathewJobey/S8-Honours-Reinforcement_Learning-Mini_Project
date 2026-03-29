@@ -11,11 +11,23 @@ An interactive, continuous-control Reinforcement Learning project focused on tea
 
 ### 🎥 Demonstration
 
-*(Drop your main successful landing GIF link here)*
-![Perfect Landing Demo]()
+#### Algorithm Comparison: PPO vs. SAC
 
-*(Drop a picture of your web dashboard here)*
-![Web Dashboard Interface]()
+During the initial training phases, Proximal Policy Optimization (PPO) struggled with the chaotic 3D continuous action space, often converging on suboptimal local minima or failing to arrest terminal velocity. 
+
+![PPO Crash Demo](ppo%20training~2.gif)
+*Above: An early PPO agent failing to balance the thrust-to-weight ratio, resulting in a crash.*
+
+By migrating to the entropy-maximizing Soft Actor-Critic (SAC) algorithm, the agent successfully learned the delicate multi-axis thrust balance required to execute a precise propulsive landing.
+
+![SAC Perfect Landing Demo](sac%20final%20trained~3.gif)
+*Above: The fully trained SAC agent executing a flawless "hoverslam" maneuver to land safely on the pad.*
+
+#### Interactive Web Dashboard
+
+The trained neural policy is deployed into a production-ready Flask web application. It features a zero-latency Server-Sent Events (SSE) telemetry pipeline and an MJPEG video stream, allowing users to dynamically randomize drop conditions and watch the AI adapt in real-time.
+
+![Web Dashboard Interface](web%20dashboard.jpeg)
 
 ---
 
