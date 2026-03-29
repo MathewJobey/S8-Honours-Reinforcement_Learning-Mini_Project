@@ -68,13 +68,26 @@ Training an agent to land a rocket is notoriously difficult due to the sparse re
 
 Initial experiments began using Proximal Policy Optimization (PPO). While highly stable, PPO struggled heavily with the complex, continuous 3D action space of the rocket's thrusters. The transition to **Soft Actor-Critic (SAC)** was the turning point. SAC's entropy maximization encouraged the agent to explore much more aggressively, finding the delicate balance between the main engine and side thrusters significantly faster.
 
-### 2. Reward Shaping & The "Physics Death Trap" Loophole
+### 2. Reward Shaping & Adversarial Exploits
 
-Reinforcement learning agents are infamous for finding loopholes, and this project was no exception.
+Reinforcement learning agents are infamous for finding loopholes. Because they act as pure mathematical optimizers, if a reward function is even slightly unbalanced, the agent will discover physical loopholes to maximize its score without fulfilling the actual engineering objective. 
 
-* **The Problem:** The environment featured a strict crash penalty (`-250` points) if the rocket touched down faster than `-5.0 m/s`. Simultaneously, it was rewarded for following an aggressive mathematical glide slope.
-* **The Exploit:** At 2 meters above the pad, the aggressive glide slope demanded a falling speed of `-7.1 m/s`. The AI realized its thrust-to-weight ratio wasn't powerful enough to brake from `-7.1` to `-5.0` in just 2 meters. Because following the rules guaranteed a fatal crash, **the AI learned to permanently hover at 2 meters** to avoid touching the ground at all.
-* **The Fix:** The target glide slope multiplier was softened (from `4.0` to `2.0`), giving the AI a survivable target of `-3.8 m/s` on final approach. A steep anti-hover penalty was introduced, forcing the AI to finally commit to the landing.
+*(Note: While building the custom Box2D physics engine, scaling the observation space, and tuning the SAC hyperparameters presented countless daily challenges, the following three adversarial exploits were by far the major engineering hurdles overcome during training.)*
+
+#### Exploit A: The "Physics Death Trap" (Infinite Hovering)
+* **The Problem:** The environment featured a strict crash penalty (`-250` points) if the rocket touched down faster than `-5.0 m/s`. Simultaneously, it was rewarded for following an aggressive mathematical glide slope curve.
+* **The Exploit:** At 2 meters above the pad, the aggressive glide slope demanded a falling speed of `-7.1 m/s`. The AI realized its thrust-to-weight ratio wasn't powerful enough to brake from `-7.1` to `-5.0` in just 2 meters. Knowing that following the guide curve guaranteed a fatal crash, **the AI learned to permanently hover at 2 meters** to avoid touching the ground at all.
+* **The Fix:** The target glide slope multiplier was softened, giving the AI a survivable target of `-3.8 m/s` on final approach. Furthermore, a steep "Anti-Climb" velocity penalty was introduced, mathematically forcing the AI to descend and commit to the landing.
+
+#### Exploit B: The "Cheap Parking Ticket" (X-Axis Exploit)
+* **The Problem:** The continuous penalty for drifting horizontally away from the landing pad was capped at a maximum of `-1.0` point per frame to prevent gradient explosion early in training.
+* **The Exploit:** The AI realized that utilizing its side thrusters to align with the pad carried a high risk of tipping the rocket over, which would trigger a massive `-500` out-of-bounds penalty. Instead, **it chose to safely land in the dirt 20 meters away from the pad**, happily paying the tiny `-1.0` "parking ticket" because it was mathematically cheaper than risking a flip.
+* **The Fix:** A "Dead-Center Bonus" was introduced. If the rocket maneuvers its center of mass within 0.1 meters of the exact middle of the concrete pad, it receives a steady stream of bonus points that scale exponentially when the rocket is under 5 meters in altitude. The opportunity cost of missing the pad became too high to ignore.
+
+#### Exploit C: The "Ghost Brake" Defense
+* **The Problem:** To apply the crash penalty, the environment checked the rocket's internal Y-velocity array at the exact frame the episode terminated.
+* **The Exploit:** The AI learned to free-fall at lethal speeds to save fuel. However, in the exact millisecond it collided with the ground, it would fire its main engine at 100%. This manipulated its internal velocity array to briefly report a "safe" speed of `-4.9 m/s` to the reward function, **spoofing a safe landing even though the physical momentum would have shattered the rocket.**
+* **The Fix:** The Python environment was patched to bypass the agent's reported velocity. Instead, the raw physical impact force was extracted directly from the internal Box2D `ContactDetector` collision listener, ensuring the `-250` point crash penalty could not be tricked by last-millisecond engine burns.
 
 ### 3. Domain Randomization & "Death Spawns"
 
@@ -117,8 +130,7 @@ To test the model in real-time, the custom Pygame environment was hooked up to a
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/yourusername/dropship-rl.git
-cd dropship-rl
+git clone https://github.com/MathewJobey/S8-Honours-Reinforcement_Learning-Mini_Project.git
 
 # 2. Create and activate a virtual environment
 python -m venv venv
@@ -145,3 +157,5 @@ To watch the AI perform automated test flights locally via Pygame:
 ```bash
 python test_phase3.py
 ```
+## 📄 License
+This project is licensed under the MIT License.
