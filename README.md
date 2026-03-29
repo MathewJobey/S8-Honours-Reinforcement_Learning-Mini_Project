@@ -16,7 +16,7 @@ An interactive, continuous-control Reinforcement Learning project focused on tea
 During the initial training phases, Proximal Policy Optimization (PPO) struggled with the chaotic 3D continuous action space, often converging on suboptimal local minima or failing to arrest terminal velocity. 
 
 ![PPO Crash Demo](ppo_training.gif)
-*Above: An early PPO agent failing to balance the thrust-to-weight ratio, resulting in a crash.*
+*Above: An early PPO agent failing to balance the thrust-to-weight ratio, resulting in a crash. Same is how the early scenario of SAC also looked like.*
 
 By migrating to the entropy-maximizing Soft Actor-Critic (SAC) algorithm, the agent successfully learned the delicate multi-axis thrust balance required to execute a precise propulsive landing.
 
