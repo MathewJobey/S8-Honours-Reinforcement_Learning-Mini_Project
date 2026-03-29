@@ -1,2 +1,13 @@
 venv/
 rocket_env/__pycache__/
+# 1. Ignore IDE/Editor settings
+.vscode/
+__pycache__/
+
+# 2. Ignore Python virtual environments
+venv/
+env/
+
+# 3. Ignore massive AI memory files and intermediate checkpoints
+*.pkl
+models/Run */sac_phase3_*_steps.zip
